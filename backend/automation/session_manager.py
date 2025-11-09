@@ -65,27 +65,29 @@ class CalibrationSession:
             raise
     
     async def _calibration_loop(self):
-        """Main calibration loop"""
+        """Main calibration loop - only calls GPT after successful scroll"""
         try:
             while self.is_running:
                 # Get current video data
                 video_data = await self.bot.get_current_video_data()
                 
                 if not video_data:
-                    logger.warning("Failed to extract video data, scrolling...")
+                    logger.warning("Failed to extract video data, scrolling to next...")
                     await self.bot.scroll_to_next_video()
+                    # Wait longer for page to stabilize after scroll
+                    await asyncio.sleep(4)
                     continue
                 
                 logger.info(f"Processing: {video_data['videoUrl']}")
                 
-                # Classify video
+                # Classify video with GPT (only called when we have valid video data)
                 try:
                     # Decode screenshot
                     screenshot_data = video_data['screenshot'].split(',')[1]  # Remove data:image/jpeg;base64,
                     import base64
                     screenshot_bytes = base64.b64decode(screenshot_data)
                     
-                    # Classify
+                    # Classify with LLM
                     classification = await self.classifier.classify(
                         image=screenshot_bytes,
                         caption=video_data.get('caption', ''),
@@ -105,10 +107,11 @@ class CalibrationSession:
                     # Update stats
                     self.bot.update_stats(is_match)
                     
-                    # Execute action
+                    # Execute action based on classification
                     if is_match:
                         logger.info("✅ MATCH! Liking video...")
                         await self.bot.like_video()
+                        await asyncio.sleep(1)  # Short delay after liking
                     else:
                         logger.info("❌ No match, skipping...")
                     
@@ -126,8 +129,12 @@ class CalibrationSession:
                 except Exception as e:
                     logger.error(f"Classification error: {e}")
                 
-                # Always scroll to next video
+                # Scroll to next video (after classification is done)
+                logger.info("Scrolling to next video...")
                 await self.bot.scroll_to_next_video()
+                
+                # Wait for scroll to complete and new video to load (3-5s)
+                await asyncio.sleep(4)
                 
                 # Check completion
                 stats = self.bot.get_stats()
@@ -135,9 +142,6 @@ class CalibrationSession:
                     logger.info("🎉 Calibration complete!")
                     await self.stop()
                     break
-                
-                # Human-like delay
-                await asyncio.sleep(1)
                 
         except asyncio.CancelledError:
             logger.info(f"Session {self.session_id} cancelled")
