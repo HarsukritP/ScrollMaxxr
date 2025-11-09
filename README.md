@@ -10,16 +10,19 @@ An AI-powered Chrome extension that automatically calibrates your TikTok For You
 
 ## What It Does
 
-ScrollMaxxr automates the tedious process of training your TikTok algorithm. Simply select what content you want to see (or describe it in your own words), hit start, and watch as our AI agent:
+ScrollMaxxr automates the tedious process of training your TikTok algorithm. Simply select what content you want to see (or describe it in your own words), hit start, and let our AI agent run in the background:
 
-- Scrolls through TikTok automatically
-- Analyzes each video using multimodal AI (Gemini Flash 1.5)
+- **Runs in a headless browser** - You don't need TikTok open!
+- Scrolls through TikTok automatically using Playwright
+- Analyzes each video using multimodal AI (GPT-5-nano)
 - Likes videos that match your preferences
 - Skips videos you don't want
-- Provides real-time progress updates
+- Provides real-time progress updates via WebSocket
 - Completes when your FYP is optimized (70% match rate)
 
 **Result:** A perfectly curated For You Page in 2-3 minutes instead of 30+ minutes of manual scrolling.
+
+**Architecture:** Chrome extension extracts your TikTok cookies → Backend launches Playwright headless browser → Playwright navigates TikTok with your session → AI classifies videos → Actions executed → Stats stream back to extension.
 
 ---
 
@@ -53,15 +56,23 @@ cd backend
 python3 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
-# Install dependencies
+# Install dependencies (includes Playwright)
 pip install -r requirements.txt
+
+# Install Playwright Chromium browser (~200MB)
+playwright install chromium
 
 # Create .env file
 cp .env.example .env
 
-# Add your API keys to .env
-# GEMINI_API_KEY=your_gemini_api_key_here
-# OPENAI_API_KEY=your_openai_api_key_here (optional)
+# Add your API key to .env
+# OPENAI_API_KEY=your_openai_api_key_here
+```
+
+**Or use the automated installer:**
+
+```bash
+./INSTALL.sh
 ```
 
 #### 3. Start Backend Server
@@ -84,11 +95,12 @@ python main.py
 
 #### 5. Use the Extension
 
-1. Go to [TikTok](https://www.tiktok.com)
-2. Click the ScrollMaxxr extension icon
+1. **Login to TikTok** at [tiktok.com](https://www.tiktok.com) (just once, to save cookies)
+2. Click the **ScrollMaxxr extension icon** (don't need TikTok tab open)
 3. Select a content category from dropdown (or choose "Custom" and describe your vibe)
 4. Click **Start Calibration**
-5. Watch it work!
+5. Watch the stats update in real-time!
+6. **(Optional)** Close TikTok tab - calibration runs in the background on your backend server!
 
 ---
 
@@ -145,16 +157,17 @@ ScrollMaxxr/
 - **Manifest:** V3 (latest Chrome extension standard)
 - **Styling:** Tailwind CSS (via CDN)
 - **Storage:** Chrome Storage API
+- **Role:** Control panel & cookie extractor
 
 ### Backend
 - **Framework:** FastAPI 0.104.1+
 - **Language:** Python 3.11+
 - **Server:** Uvicorn (ASGI)
-- **AI/ML:** 
-  - Gemini Flash 1.5 (primary, fastest & cheapest)
-  - GPT-4o-mini (fallback)
-  - Claude 3 Haiku (fallback 2)
+- **Browser Automation:** Playwright (headless Chromium)
+- **Anti-Bot:** playwright-stealth
+- **AI/ML:** OpenAI GPT-5-nano-2025-08-07 (multimodal)
 - **Real-time:** WebSocket (built-in FastAPI support)
+- **Image Processing:** Pillow (PIL)
 
 ### Webapp (Phase 2)
 - **Framework:** Next.js 14 (App Router)
