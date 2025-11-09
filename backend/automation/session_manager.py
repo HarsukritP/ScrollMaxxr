@@ -69,17 +69,41 @@ class CalibrationSession:
         try:
             while self.is_running:
                 # Get current video data
-                video_data = await self.bot.get_current_video_data()
+                try:
+                    video_data = await self.bot.get_current_video_data()
+                except Exception as e:
+                    # Check if browser was closed
+                    if 'closed' in str(e).lower() or 'target' in str(e).lower():
+                        logger.error("Browser was closed - stopping session")
+                        await self.stop()
+                        break
+                    else:
+                        logger.error(f"Error getting video data: {e}")
+                        video_data = None
                 
                 if not video_data:
                     logger.warning("Failed to extract video data, scrolling to next...")
+                    
+                    # Still count this as an attempted video (for progress tracking)
+                    self.bot.stats['videosProcessed'] += 1
+                    self.bot.stats['currentVideo'] = 'Skipped (extraction failed)'
                     
                     # Send stats update even when skipping (keeps UI responsive)
                     if self.stats_callback:
                         stats = self.bot.get_stats()
                         await self.stats_callback(stats)
                     
-                    await self.bot.scroll_to_next_video()
+                    # Try to scroll, but detect if browser was closed
+                    try:
+                        await self.bot.scroll_to_next_video()
+                    except Exception as scroll_err:
+                        if 'closed' in str(scroll_err).lower() or 'target' in str(scroll_err).lower():
+                            logger.error("Browser was closed during scroll - stopping session")
+                            await self.stop()
+                            break
+                        else:
+                            logger.error(f"Scroll error: {scroll_err}")
+                    
                     await asyncio.sleep(2)  # Reduced from 4s to 2s
                     continue
                 

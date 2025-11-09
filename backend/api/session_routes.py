@@ -101,7 +101,7 @@ async def start_session(request: SessionStartRequest):
 @router.post("/stop/{session_id}", response_model=SessionResponse)
 async def stop_session_endpoint(session_id: str):
     """
-    Stop an active calibration session
+    Stop an active calibration session (idempotent - always succeeds)
     
     Args:
         session_id: ID of the session to stop
@@ -112,7 +112,14 @@ async def stop_session_endpoint(session_id: str):
     try:
         session = get_session(session_id)
         if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
+            # Session doesn't exist - that's fine, maybe it was already stopped
+            # Return success so the client can clean up its state
+            logger.warning(f"Session {session_id} not found (already stopped?)")
+            return SessionResponse(
+                session_id=session_id,
+                status="stopped",
+                message="Session already stopped or doesn't exist"
+            )
         
         await stop_session(session_id)
         
@@ -122,8 +129,6 @@ async def stop_session_endpoint(session_id: str):
             message="Session stopped successfully"
         )
         
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Failed to stop session: {e}", exc_info=True)
         raise HTTPException(

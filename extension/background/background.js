@@ -233,32 +233,42 @@ async function stopPlaywrightSession() {
       statsWebSocket = null;
     }
     
-    // Stop session on backend
-    const response = await fetch(`${BACKEND_URL}/api/session/stop/${activeSessionId}`, {
-      method: 'POST'
-    });
-    
-    if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Failed to stop session: ${error}`);
+    // Stop session on backend (with error handling)
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/session/stop/${activeSessionId}`, {
+        method: 'POST'
+      });
+      
+      const result = await response.json();
+      console.log('[ScrollMaxxr BG] Backend response:', result.message);
+    } catch (fetchError) {
+      // If backend is unreachable or session doesn't exist, that's ok
+      // We'll clean up our state anyway
+      console.warn('[ScrollMaxxr BG] Backend stop failed (cleaning up anyway):', fetchError.message);
     }
     
-    const result = await response.json();
+    // ALWAYS clean up extension state, even if backend call failed
     activeSessionId = null;
-    
-    // Clear session ID from storage
     await chrome.storage.local.remove('activeSessionId');
     
-    console.log('[ScrollMaxxr BG] Session stopped');
+    console.log('[ScrollMaxxr BG] Session stopped and state cleaned up');
     
     return {
       success: true,
-      message: result.message
+      message: 'Session stopped'
     };
     
   } catch (error) {
     console.error('[ScrollMaxxr BG] Failed to stop session:', error);
-    throw error;
+    
+    // Even if there's an error, try to clean up state
+    activeSessionId = null;
+    await chrome.storage.local.remove('activeSessionId');
+    
+    return {
+      success: false,
+      message: error.message
+    };
   }
 }
 

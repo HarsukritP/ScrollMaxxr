@@ -52,18 +52,14 @@ class TikTokBot:
             if not headless_mode:
                 logger.info("🎬 LAUNCHING VISIBLE BROWSER (debug mode)")
             
-            # Launch Chromium with stealth and autoplay enabled
+            # Launch Chrome (not Chromium) with stealth and autoplay enabled
+            # Use Chrome to get proprietary codec support (H.264, AAC, etc) needed for TikTok
             self.browser = await self.playwright.chromium.launch(
                 headless=headless_mode,  # Can be disabled via HEADLESS=false in .env
+                channel='chrome',  # Use Google Chrome instead of Chromium (has codecs!)
                 args=[
                     '--disable-blink-features=AutomationControlled',
-                    '--disable-dev-shm-usage',
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-web-security',
-                    '--disable-features=IsolateOrigins,site-per-process',
                     '--autoplay-policy=no-user-gesture-required',  # Allow autoplay without user gesture
-                    '--disable-features=PreloadMediaEngagementData,AutoplayIgnoreWebAudio,MediaEngagementBypassAutoplayPolicies'
                 ]
             )
             
@@ -210,6 +206,43 @@ class TikTokBot:
             return None
         
         try:
+            # CHECK FOR CAPTCHA FIRST (before doing anything else)
+            captcha_detected = await self._check_for_captcha()
+            if captcha_detected:
+                logger.warning("🤖 CAPTCHA DETECTED!")
+                
+                # Try to dismiss it by clicking X button
+                logger.info("Attempting to dismiss captcha by clicking X button...")
+                dismissed = await self._dismiss_captcha()
+                
+                if dismissed:
+                    logger.info("✅ Captcha dismissed successfully!")
+                    await asyncio.sleep(2)  # Let page stabilize
+                    
+                    # Check if another captcha appeared
+                    still_captcha = await self._check_for_captcha()
+                    if not still_captcha:
+                        logger.info("✅ No more captchas, continuing...")
+                    else:
+                        logger.warning("⚠️ Captcha still present after dismiss, waiting for manual solve...")
+                        captcha_solved = await self._wait_for_captcha_solve(timeout=60)
+                        if not captcha_solved:
+                            logger.error("❌ Captcha not solved in time - stopping session")
+                            raise RuntimeError("Captcha not solved - TikTok blocked automation")
+                        logger.info("✅ Captcha solved manually! Continuing...")
+                else:
+                    logger.warning("Could not auto-dismiss captcha, waiting for manual solve...")
+                    logger.info("Since HEADLESS=false, you can solve it in the visible browser window")
+                    
+                    captcha_solved = await self._wait_for_captcha_solve(timeout=60)
+                    if not captcha_solved:
+                        logger.error("❌ Captcha not solved in time - stopping session")
+                        raise RuntimeError("Captcha not solved - TikTok blocked automation")
+                    
+                    logger.info("✅ Captcha solved! Continuing...")
+                
+                await asyncio.sleep(2)  # Let page stabilize after captcha
+            
             # Find active video (no wait - video is already ready from scroll)
             video = await self.page.query_selector('video')
             if not video:
@@ -289,28 +322,66 @@ class TikTokBot:
                             return { error: 'LIVE video detected - skipping' };
                         }
                         
-                        // Extract username (multiple selectors)
-                        const usernameEl = document.querySelector('[data-e2e="browse-username"]') ||
-                                          document.querySelector('[data-e2e="video-author-uniqueid"]') ||
-                                          container.querySelector('a[href^="/@"]') ||
-                                          document.querySelector('a[href^="/@"]');
-                        let username = usernameEl?.textContent?.trim().replace('@', '') || '';
+                        // BETTER STRATEGY: Find any link to the video first
+                        let videoUrl = '';
+                        let username = '';
+                        let videoId = '';
                         
-                        // Try to get from URL as fallback
-                        if (!username) {
-                            const urlMatch = window.location.href.match(/\\/@([^/]+)/);
-                            username = urlMatch ? urlMatch[1] : '';
+                        // Strategy 1: Find direct video link (most reliable)
+                        const allLinks = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+                        let videoLink = null;
+                        
+                        for (const link of allLinks) {
+                            const rect = link.getBoundingClientRect();
+                            // Check if link is in the viewport area
+                            if (rect.top >= -500 && rect.bottom <= window.innerHeight + 500) {
+                                videoLink = link;
+                                break;
+                            }
                         }
                         
-                        // Extract video ID (multiple strategies)
-                        const videoLink = container.querySelector('a[href*="/video/"]') ||
-                                         document.querySelector('a[href*="/video/"]');
-                        let videoId = videoLink?.href.match(/\\/video\\/(\\d+)/)?.[1] || '';
+                        // If found link, extract URL, username, and ID from it
+                        if (videoLink) {
+                            videoUrl = videoLink.href;
+                            const urlMatch = videoUrl.match(/\\/@([^/]+)\\/video\\/(\\d+)/);
+                            if (urlMatch) {
+                                username = urlMatch[1];
+                                videoId = urlMatch[2];
+                            }
+                        }
                         
-                        // Try from URL
-                        if (!videoId) {
-                            const urlMatch = window.location.href.match(/\\/video\\/(\\d+)/);
-                            videoId = urlMatch ? urlMatch[1] : '';
+                        // Strategy 2: Extract from current URL (if on individual video page)
+                        if (!videoUrl) {
+                            const currentUrl = window.location.href;
+                            const urlMatch = currentUrl.match(/\\/@([^/]+)\\/video\\/(\\d+)/);
+                            if (urlMatch) {
+                                videoUrl = currentUrl;
+                                username = urlMatch[1];
+                                videoId = urlMatch[2];
+                            }
+                        }
+                        
+                        // Strategy 3: Try to extract username separately
+                        if (!username) {
+                            const usernameEl = document.querySelector('[data-e2e="browse-username"]') ||
+                                              document.querySelector('[data-e2e="video-author-uniqueid"]') ||
+                                              container.querySelector('a[href^="/@"]') ||
+                                              document.querySelector('a[href^="/@"]');
+                            username = usernameEl?.textContent?.trim().replace('@', '') || '';
+                            
+                            // Try extracting from any /@username link
+                            if (!username) {
+                                const userLink = document.querySelector('a[href*="/@"]');
+                                if (userLink) {
+                                    const match = userLink.href.match(/\\/@([^/]+)/);
+                                    username = match ? match[1] : '';
+                                }
+                            }
+                        }
+                        
+                        // Fallback: Use FYP URL if we couldn't get the real video URL
+                        if (!videoUrl) {
+                            videoUrl = 'https://www.tiktok.com/foryou';
                         }
                         
                         // Extract caption (multiple selectors)
@@ -325,11 +396,6 @@ class TikTokBot:
                         const hashtags = Array.from(hashtagEls).map(el => 
                             el.textContent.replace('#', '').trim()
                         ).filter(Boolean);
-                        
-                        // Construct video URL
-                        const videoUrl = username && videoId ? 
-                            `https://www.tiktok.com/@${username}/video/${videoId}` : 
-                            window.location.href;
                         
                         return {
                             username: username || 'unknown',
@@ -356,7 +422,9 @@ class TikTokBot:
                 
                 # Special handling for LIVE videos
                 if 'LIVE' in str(error_msg).upper():
-                    logger.warning("🔴 LIVE video detected - skipping (these break the scroll flow)")
+                    logger.warning("🔴 LIVE video detected - using aggressive scroll to get past it")
+                    # LIVE videos have different DOM structure, use multiple scroll attempts
+                    await self._aggressive_scroll_past_live()
                 else:
                     logger.error(f"Failed to extract: {error_msg}")
                 
@@ -366,11 +434,6 @@ class TikTokBot:
             if 'debug' in video_data:
                 logger.info(f"Debug info: {video_data['debug']}")
                 del video_data['debug']
-            
-            # Validate we have minimal data
-            if not video_data.get('username') or video_data['username'] == 'unknown':
-                logger.warning("Could not identify username, skipping video")
-                return None
             
             # Wait for screenshot task to complete (should be done by now)
             logger.info("Waiting for screenshots to finish...")
@@ -393,33 +456,92 @@ class TikTokBot:
             return None
     
     async def like_video(self):
-        """Like the current video"""
+        """Like the current video by finding and clicking the button element"""
         if not self.page:
             return False
         
         try:
-            # Find like button
-            like_button = await self.page.query_selector(
-                '[data-e2e="browse-like"], [data-e2e="like-icon"], button[aria-label*="like"]'
-            )
+            logger.info("🔍 Looking for like button element...")
             
-            if like_button:
-                # Check if already liked
-                is_liked = await like_button.evaluate(
-                    'el => el.classList.contains("liked") || el.getAttribute("aria-pressed") === "true"'
-                )
-                
-                if not is_liked:
-                    await like_button.click()
-                    logger.info("✅ Liked video")
-                    await asyncio.sleep(0.5 + (asyncio.get_event_loop().time() % 0.5))
-                    return True
-                else:
-                    logger.info("Video already liked")
-                    return True
-            else:
-                logger.warning("Like button not found")
+            # Try multiple selectors to find the BUTTON element (not icon)
+            button_selectors = [
+                'button[data-e2e="browse-like"]',
+                'button[data-e2e="like-button"]',
+            ]
+            
+            like_button_element = None
+            used_selector = None
+            
+            for selector in button_selectors:
+                try:
+                    btn = await self.page.query_selector(selector)
+                    if btn:
+                        like_button_element = btn
+                        used_selector = selector
+                        logger.info(f"Found button element with: {selector}")
+                        break
+                except Exception as e:
+                    continue
+            
+            # Fallback: Find the like icon and get its parent button
+            if not like_button_element:
+                logger.info("Trying fallback: finding parent button of like icon...")
+                icon = await self.page.query_selector('[data-e2e="like-icon"]')
+                if icon:
+                    like_button_element = await icon.evaluate_handle('el => el.closest("button")')
+                    used_selector = 'like-icon >> parent button'
+                    logger.info(f"Found parent button of like icon")
+            
+            if not like_button_element:
+                logger.error("❌ Could not find like button element")
                 return False
+            
+            # Check if already liked
+            is_liked_before = await like_button_element.evaluate("""
+                (el) => {
+                    const svg = el.querySelector('svg');
+                    const fill = svg?.getAttribute('fill') || '';
+                    return fill.includes('254') || fill.includes('rgb(254, 44, 85)') || fill.includes('#FE2C55');
+                }
+            """)
+            
+            if is_liked_before:
+                logger.info(f"ℹ️ Video already liked (selector: {used_selector})")
+                return True
+            
+            # Click the button element directly with Playwright (generates proper events)
+            logger.info(f"Clicking button element with Playwright.click()...")
+            await like_button_element.click(force=True, delay=100)  # delay=100ms simulates human click duration
+            
+            # Wait for like animation and network request
+            await asyncio.sleep(1.5)
+            
+            # Verify the like by checking SVG fill color
+            is_liked_after = await self.page.evaluate("""
+                () => {
+                    const icon = document.querySelector('[data-e2e="like-icon"]') ||
+                                document.querySelector('[data-e2e="browse-like-icon"]');
+                    
+                    if (!icon) return false;
+                    
+                    const button = icon.closest('button');
+                    const svg = button?.querySelector('svg') || icon.querySelector('svg') || icon;
+                    const fill = svg?.getAttribute('fill') || '';
+                    
+                    // TikTok red color = liked
+                    return fill.includes('254') || fill.includes('rgb(254, 44, 85)') || fill.includes('#FE2C55');
+                }
+            """)
+            
+            if is_liked_after:
+                logger.info(f"✅ Video LIKED successfully! Heart turned red ❤️ (selector: {used_selector})")
+            else:
+                logger.error(f"❌ Like failed - heart didn't turn red after clicking")
+                logger.error(f"   Selector used: {used_selector}")
+                logger.error(f"   Check visible browser to see if TikTok is blocking likes")
+            
+            await asyncio.sleep(0.3)
+            return True
                 
         except Exception as e:
             logger.error(f"Failed to like video: {e}")
@@ -467,6 +589,235 @@ class TikTokBot:
         except Exception as e:
             logger.error(f"Failed to scroll: {e}")
             return False
+    
+    async def _aggressive_scroll_past_live(self):
+        """
+        Aggressively scroll past LIVE videos (they have sticky DOM that resists normal scrolling)
+        
+        LIVE videos often don't scroll properly with a single ArrowDown, so we:
+        1. Press ArrowDown multiple times
+        2. Use wheel events
+        3. Direct scroll manipulation
+        4. Wait longer for transition
+        """
+        logger.info("🔴 Using aggressive scroll to bypass LIVE video...")
+        
+        try:
+            # Scroll attempt 1: Multiple ArrowDown presses
+            for i in range(3):
+                await self.page.keyboard.press('ArrowDown')
+                await asyncio.sleep(0.3)
+            
+            # Scroll attempt 2: Wheel events
+            for i in range(2):
+                await self.page.evaluate('window.scrollBy({top: window.innerHeight, behavior: "smooth"})')
+                await asyncio.sleep(0.3)
+            
+            # Scroll attempt 3: Direct page scroll
+            await self.page.evaluate('window.scrollTo({top: window.scrollY + window.innerHeight * 2, behavior: "smooth"})')
+            
+            # Wait longer for LIVE video to transition away
+            await asyncio.sleep(2)
+            
+            logger.info("✅ Aggressive scroll completed")
+            
+        except Exception as e:
+            logger.error(f"Error during aggressive scroll: {e}")
+    
+    async def _check_for_captcha(self) -> bool:
+        """
+        Check if a captcha is present on the page
+        
+        Returns:
+            True if captcha detected, False otherwise
+        """
+        if not self.page:
+            return False
+        
+        try:
+            captcha_detected = await self.page.evaluate("""
+                () => {
+                    // Check for common captcha indicators
+                    const captchaSelectors = [
+                        'div[id*="captcha"]',
+                        'div[class*="captcha"]',
+                        'div[class*="Captcha"]',
+                        'iframe[src*="captcha"]',
+                        'div[class*="verify"]',
+                        'div[class*="Verify"]',
+                        '[role="dialog"]',
+                    ];
+                    
+                    // Use text content check (works in browser JS)
+                    const bodyText = document.body.textContent || '';
+                    if (bodyText.toLowerCase().includes('drag the slider') ||
+                        bodyText.toLowerCase().includes('verify you are human') ||
+                        bodyText.toLowerCase().includes('fit the puzzle')) {
+                        return true;
+                    }
+                    
+                    // Check for captcha elements
+                    for (const selector of captchaSelectors) {
+                        const el = document.querySelector(selector);
+                        if (el && el.offsetParent !== null) {  // Visible
+                            return true;
+                        }
+                    }
+                    
+                    return false;
+                }
+            """)
+            
+            return captcha_detected
+            
+        except Exception as e:
+            logger.error(f"Error checking for captcha: {e}")
+            return False
+    
+    async def _dismiss_captcha(self) -> bool:
+        """
+        Try to dismiss captcha by clicking the X button in the top right
+        
+        Returns:
+            True if captcha was dismissed, False otherwise
+        """
+        if not self.page:
+            return False
+        
+        try:
+            logger.info("🔍 Looking for captcha close button (X)...")
+            
+            # Find and click the X button
+            dismissed = await self.page.evaluate("""
+                () => {
+                    // Find modal/dialog (topmost element)
+                    const modalSelectors = [
+                        '[role="dialog"]',
+                        'div[class*="Modal"]',
+                        'div[class*="modal"]',
+                        'div[id*="captcha"]',
+                        'div[class*="verify"]'
+                    ];
+                    
+                    let modal = null;
+                    for (const selector of modalSelectors) {
+                        const el = document.querySelector(selector);
+                        if (el && el.offsetParent !== null) {
+                            modal = el;
+                            break;
+                        }
+                    }
+                    
+                    if (!modal) {
+                        return { success: false, reason: 'No modal found' };
+                    }
+                    
+                    // Find close button (X) in top right
+                    const closeSelectors = [
+                        'button[aria-label*="close" i]',
+                        'button[aria-label*="Close" i]',
+                        'button[class*="close"]',
+                        'button[class*="Close"]',
+                        'svg[class*="close"]',
+                        'div[class*="close"]',
+                        // Generic close button patterns
+                        'button:has(svg)',  // Buttons with SVG (often close buttons)
+                    ];
+                    
+                    let closeButton = null;
+                    let usedSelector = null;
+                    
+                    // Search within the modal first
+                    for (const selector of closeSelectors) {
+                        if (selector.includes(':has')) continue;  // Skip Playwright-only selectors
+                        
+                        const btn = modal.querySelector(selector);
+                        if (btn) {
+                            // Check if it's in the top-right area
+                            const rect = btn.getBoundingClientRect();
+                            const modalRect = modal.getBoundingClientRect();
+                            
+                            // Top right = right side of modal and top area
+                            const isTopRight = (rect.right > modalRect.right - 100) && 
+                                              (rect.top < modalRect.top + 100);
+                            
+                            if (isTopRight || btn.textContent.includes('×') || btn.textContent.includes('✕')) {
+                                closeButton = btn;
+                                usedSelector = selector;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    // Fallback: Find ANY button in top right of modal
+                    if (!closeButton) {
+                        const allButtons = modal.querySelectorAll('button');
+                        for (const btn of allButtons) {
+                            const rect = btn.getBoundingClientRect();
+                            const modalRect = modal.getBoundingClientRect();
+                            
+                            const isTopRight = (rect.right > modalRect.right - 100) && 
+                                              (rect.top < modalRect.top + 100);
+                            
+                            if (isTopRight) {
+                                closeButton = btn;
+                                usedSelector = 'top-right button';
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (!closeButton) {
+                        return { success: false, reason: 'Close button not found' };
+                    }
+                    
+                    // Click the close button
+                    closeButton.click();
+                    
+                    return {
+                        success: true,
+                        selector: usedSelector
+                    };
+                }
+            """)
+            
+            if dismissed.get('success'):
+                logger.info(f"✅ Clicked captcha close button: {dismissed.get('selector')}")
+                await asyncio.sleep(1)  # Wait for modal to close
+                return True
+            else:
+                logger.warning(f"⚠️ Could not dismiss captcha: {dismissed.get('reason')}")
+                return False
+            
+        except Exception as e:
+            logger.error(f"Error dismissing captcha: {e}")
+            return False
+    
+    async def _wait_for_captcha_solve(self, timeout: int = 60) -> bool:
+        """
+        Wait for captcha to be solved (by human in visible browser)
+        
+        Args:
+            timeout: Max seconds to wait
+            
+        Returns:
+            True if captcha solved, False if timeout
+        """
+        logger.info(f"⏳ Waiting up to {timeout} seconds for captcha to be solved...")
+        
+        start_time = asyncio.get_event_loop().time()
+        
+        while asyncio.get_event_loop().time() - start_time < timeout:
+            # Check if captcha still present
+            captcha_still_there = await self._check_for_captcha()
+            
+            if not captcha_still_there:
+                return True
+            
+            await asyncio.sleep(5)  # Check every 5 seconds
+            logger.info(f"⏳ Still waiting for captcha solve... ({int(asyncio.get_event_loop().time() - start_time)}s elapsed)")
+        
+        return False
     
     async def _ensure_video_playing(self):
         """
@@ -680,7 +1031,19 @@ class TikTokBot:
             quality = 50  # Good quality for GPT vision analysis
             
             for i in range(num_frames):
-                screenshot_bytes = await video.screenshot(type='jpeg', quality=quality)
+                try:
+                    # Try video element screenshot first
+                    screenshot_bytes = await video.screenshot(type='jpeg', quality=quality)
+                except Exception as video_err:
+                    # If video element screenshot fails, fallback to full page screenshot
+                    logger.warning(f"Video screenshot failed, using page screenshot: {video_err}")
+                    try:
+                        screenshot_bytes = await self.page.screenshot(type='jpeg', quality=quality)
+                    except Exception as page_err:
+                        logger.error(f"Page screenshot also failed: {page_err}")
+                        # Skip this frame but continue to next
+                        continue
+                
                 screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
                 screenshots.append(f"data:image/jpeg;base64,{screenshot_base64}")
                 logger.info(f"Captured frame {i+1}/{num_frames}")
@@ -689,6 +1052,12 @@ class TikTokBot:
                 if i < num_frames - 1:
                     await asyncio.sleep(1.0)
             
+            # Return what we got (even if not all 3 frames)
+            if len(screenshots) == 0:
+                logger.error("Failed to capture any screenshots")
+                return []
+            
+            logger.info(f"Successfully captured {len(screenshots)}/{num_frames} frames")
             return screenshots
             
         except Exception as e:
