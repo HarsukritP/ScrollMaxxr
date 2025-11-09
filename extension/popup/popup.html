@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ScrollMaxxr</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header">
+      <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"/>
+          <circle cx="12" cy="12" r="6"/>
+          <circle cx="12" cy="12" r="2"/>
+        </svg>
+        <h1>FYP Calibrator</h1>
+      </div>
+      <p class="tagline">Optimize your scroll</p>
+    </div>
+
+    <!-- Category Selection -->
+    <div class="categories" id="category-section">
+      <label for="category-select" class="section-label">Select Content Category</label>
+      <div class="select-wrapper">
+        <select id="category-select" class="category-select">
+          <option value="">Choose a category...</option>
+          <option value="Thirst Traps">Thirst Traps</option>
+          <option value="Skits">Skits</option>
+          <option value="Brainrot">Brainrot</option>
+          <option value="Tech">Tech</option>
+          <option value="News">News</option>
+          <option value="Edits">Edits</option>
+          <option value="Photography">Photography</option>
+          <option value="Custom">Custom Description</option>
+        </select>
+        <svg class="select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="6 9 12 15 18 9"/>
+        </svg>
+      </div>
+
+      <!-- Custom Description (hidden by default) -->
+      <div id="custom-section" class="custom-section" style="display: none;">
+        <label for="custom-description" class="section-label">Describe Your Vibe</label>
+        <textarea 
+          id="custom-description" 
+          class="custom-description"
+          placeholder="E.g., 'funny cat videos and wholesome animal content' or 'startup founder productivity tips'"
+          rows="3"
+        ></textarea>
+        <div class="char-count">
+          <span id="char-count">0</span> / 10 min
+        </div>
+      </div>
+    </div>
+
+    <!-- Control Buttons -->
+    <div class="controls">
+      <button id="start-btn" class="btn btn-primary">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        Start Calibration
+      </button>
+      <button id="stop-btn" class="btn btn-danger" style="display: none;">
+        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="6" y="6" width="12" height="12"/>
+        </svg>
+        Stop
+      </button>
+    </div>
+
+    <!-- Progress Section (hidden initially) -->
+    <div id="progress-section" class="progress-section" style="display: none;">
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-fill" style="width: 0%"></div>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-item">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">Videos Processed</div>
+            <div class="stat-value" id="videos-processed">0</div>
+          </div>
+        </div>
+
+        <div class="stat-item">
+          <div class="stat-icon stat-icon-success">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">Matches Found</div>
+            <div class="stat-value" id="matches-found">0</div>
+          </div>
+        </div>
+
+        <div class="stat-item">
+          <div class="stat-icon stat-icon-primary">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+              <polyline points="17 6 23 6 23 12"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">Match Rate</div>
+            <div class="stat-value" id="match-rate">0%</div>
+          </div>
+        </div>
+
+        <div class="stat-item">
+          <div class="stat-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div class="stat-content">
+            <div class="stat-label">Status</div>
+            <div class="stat-value" id="status">Ready</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Messages -->
+    <div id="message" class="message" style="display: none;"></div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <small>Made for Go On Hacks 2025</small>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
+
