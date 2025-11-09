@@ -72,20 +72,26 @@ async function captureTabScreenshot(tabId, cropData) {
   try {
     console.log('[ScrollMaxxr BG] Capturing screenshot of tab:', tabId);
     
-    // Capture the visible tab (has permission to capture cross-origin content)
-    const dataUrl = await chrome.tabs.captureVisibleTab(null, {
+    // Get the tab to capture
+    const tab = await chrome.tabs.get(tabId);
+    
+    // Capture the visible tab
+    // Note: This requires <all_urls> permission to work continuously
+    const dataUrl = await chrome.tabs.captureVisibleTab(tab.windowId, {
       format: 'jpeg',
       quality: 60
     });
 
     console.log('[ScrollMaxxr BG] Screenshot captured successfully');
-
-    // For now, return full screenshot without cropping
-    // Service workers don't have easy access to Image/Canvas APIs
-    // The screenshot is still useful for classification even without cropping
     return dataUrl;
   } catch (error) {
-    console.error('[ScrollMaxxr BG] Screenshot capture failed:', error);
+    console.error('[ScrollMaxxr BG] Screenshot capture failed:', error.message);
+    
+    // Check if it's a permission error
+    if (error.message.includes('activeTab') || error.message.includes('permission')) {
+      throw new Error('Screenshot permission denied. The extension needs <all_urls> permission to capture screenshots continuously. Please reload the extension and approve the permission request.');
+    }
+    
     throw error;
   }
 }

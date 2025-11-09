@@ -7,10 +7,10 @@
     "activeTab",
     "storage",
     "scripting",
-    "tabs"
+    "tabs",
+    "tabCapture"
   ],
   "host_permissions": [
-    "*://*.tiktok.com/*",
     "<all_urls>"
   ],
   "action": {
