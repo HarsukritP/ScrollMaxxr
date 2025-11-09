@@ -33,9 +33,11 @@ app.add_middleware(
 
 # Import routers
 from api.routes import router as api_router
+from api.session_routes import router as session_router
 
 # Include routers
 app.include_router(api_router)
+app.include_router(session_router)
 
 # Root endpoint
 @app.get("/")
@@ -73,6 +75,19 @@ async def startup_event():
 async def shutdown_event():
     """Run on server shutdown"""
     print("ScrollMaxxr Backend Shutting Down...")
+    
+    # Stop all active sessions
+    from automation.session_manager import list_sessions, stop_session
+    active_sessions = list_sessions()
+    if active_sessions:
+        print(f"Stopping {len(active_sessions)} active sessions...")
+        for session_id in active_sessions:
+            try:
+                await stop_session(session_id)
+            except Exception as e:
+                print(f"Error stopping session {session_id}: {e}")
+    
+    print("✅ All sessions stopped")
 
 # Run server
 if __name__ == "__main__":

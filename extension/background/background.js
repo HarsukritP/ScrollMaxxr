@@ -6,6 +6,10 @@
 // Backend URL (configurable)
 const BACKEND_URL = 'http://localhost:8000';
 
+// Session management
+let activeSessionId = null;
+let statsWebSocket = null;
+
 // Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'classify') {
@@ -14,12 +18,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(sendResponse)
       .catch(error => sendResponse({ error: error.message }));
     return true; // Keep message channel open for async response
+    
   } else if (message.action === 'captureScreenshot') {
     // Capture screenshot of the tab (bypasses CORS)
     captureTabScreenshot(sender.tab.id, message.cropData)
       .then(screenshot => sendResponse({ screenshot }))
       .catch(error => sendResponse({ error: error.message }));
     return true; // Keep message channel open for async response
+    
   } else if (message.action === 'focusTab') {
     // Focus the TikTok tab so user can see calibration happening
     if (sender.tab) {
@@ -27,6 +33,27 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.windows.update(sender.tab.windowId, { focused: true });
     }
     sendResponse({ success: true });
+    
+  } else if (message.action === 'startPlaywrightSession') {
+    // Start new Playwright-based session
+    startPlaywrightSession(message.data)
+      .then(sendResponse)
+      .catch(error => sendResponse({ error: error.message }));
+    return true;
+    
+  } else if (message.action === 'stopPlaywrightSession') {
+    // Stop active Playwright session
+    stopPlaywrightSession()
+      .then(sendResponse)
+      .catch(error => sendResponse({ error: error.message }));
+    return true;
+    
+  } else if (message.action === 'getSessionStatus') {
+    // Get current session status
+    sendResponse({ 
+      sessionId: activeSessionId, 
+      isRunning: activeSessionId !== null 
+    });
   }
 });
 
@@ -100,6 +127,153 @@ async function captureTabScreenshot(tabId, cropData) {
     }
     
     throw error;
+  }
+}
+
+// Start Playwright session
+async function startPlaywrightSession({ category, categoryDescription }) {
+  try {
+    console.log('[ScrollMaxxr BG] Starting Playwright session...');
+    
+    // Get TikTok cookies
+    const cookies = await chrome.cookies.getAll({ domain: '.tiktok.com' });
+    console.log('[ScrollMaxxr BG] Extracted', cookies.length, 'cookies');
+    
+    // Convert to Playwright format
+    const playwrightCookies = cookies.map(cookie => ({
+      name: cookie.name,
+      value: cookie.value,
+      domain: cookie.domain,
+      path: cookie.path,
+      expires: cookie.expirationDate || -1,
+      httpOnly: cookie.httpOnly || false,
+      secure: cookie.secure || false,
+      sameSite: cookie.sameSite || 'Lax'
+    }));
+    
+    // Get user agent
+    const userAgent = navigator.userAgent;
+    
+    // Start session on backend
+    const response = await fetch(`${BACKEND_URL}/api/session/start`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        category,
+        categoryDescription,
+        cookies: playwrightCookies,
+        userAgent
+      })
+    });
+    
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to start session: ${error}`);
+    }
+    
+    const result = await response.json();
+    activeSessionId = result.session_id;
+    
+    console.log('[ScrollMaxxr BG] Session started:', activeSessionId);
+    
+    // Connect to WebSocket for live stats
+    connectStatsWebSocket(activeSessionId);
+    
+    return {
+      success: true,
+      sessionId: activeSessionId,
+      message: result.message
+    };
+    
+  } catch (error) {
+    console.error('[ScrollMaxxr BG] Failed to start session:', error);
+    throw error;
+  }
+}
+
+// Stop Playwright session
+async function stopPlaywrightSession() {
+  try {
+    if (!activeSessionId) {
+      return { success: true, message: 'No active session' };
+    }
+    
+    console.log('[ScrollMaxxr BG] Stopping session:', activeSessionId);
+    
+    // Close WebSocket
+    if (statsWebSocket) {
+      statsWebSocket.close();
+      statsWebSocket = null;
+    }
+    
+    // Stop session on backend
+    const response = await fetch(`${BACKEND_URL}/api/session/stop/${activeSessionId}`, {
+      method: 'POST'
+    });
+    
+    if (!response.ok) {
+      const error = await response.text();
+      throw new Error(`Failed to stop session: ${error}`);
+    }
+    
+    const result = await response.json();
+    activeSessionId = null;
+    
+    console.log('[ScrollMaxxr BG] Session stopped');
+    
+    return {
+      success: true,
+      message: result.message
+    };
+    
+  } catch (error) {
+    console.error('[ScrollMaxxr BG] Failed to stop session:', error);
+    throw error;
+  }
+}
+
+// Connect to WebSocket for live stats updates
+function connectStatsWebSocket(sessionId) {
+  try {
+    const wsUrl = `ws://localhost:8000/api/session/ws/${sessionId}`;
+    console.log('[ScrollMaxxr BG] Connecting to WebSocket:', wsUrl);
+    
+    statsWebSocket = new WebSocket(wsUrl);
+    
+    statsWebSocket.onopen = () => {
+      console.log('[ScrollMaxxr BG] WebSocket connected');
+    };
+    
+    statsWebSocket.onmessage = (event) => {
+      try {
+        const stats = JSON.parse(event.data);
+        console.log('[ScrollMaxxr BG] Stats update:', stats);
+        
+        // Broadcast to popup if open
+        chrome.runtime.sendMessage({
+          type: 'stats_update',
+          data: stats
+        }).catch(() => {
+          // Popup might be closed, ignore error
+        });
+      } catch (error) {
+        console.error('[ScrollMaxxr BG] Error parsing stats:', error);
+      }
+    };
+    
+    statsWebSocket.onerror = (error) => {
+      console.error('[ScrollMaxxr BG] WebSocket error:', error);
+    };
+    
+    statsWebSocket.onclose = () => {
+      console.log('[ScrollMaxxr BG] WebSocket closed');
+      statsWebSocket = null;
+    };
+    
+  } catch (error) {
+    console.error('[ScrollMaxxr BG] Failed to connect WebSocket:', error);
   }
 }
 
