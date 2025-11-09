@@ -180,12 +180,11 @@ async function extractVideoData() {
       el.textContent.replace('#', '').trim()
     ).filter(Boolean);
 
-    // Capture screenshot
+    // Capture screenshot (optional - may fail due to CORS)
     const screenshot = await captureScreenshot();
     
     if (!screenshot) {
-      console.error('[ScrollMaxxr] Failed to capture screenshot');
-      return null;
+      console.warn('[ScrollMaxxr] Screenshot capture failed (CORS restriction), using text-only classification');
     }
 
     return {
@@ -193,7 +192,7 @@ async function extractVideoData() {
       hashtags,
       username,
       videoUrl,
-      screenshot,
+      screenshot: screenshot || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', // 1x1 transparent placeholder
       category: selectedCategory,
       categoryDescription
     };
@@ -208,7 +207,7 @@ async function captureScreenshot() {
   try {
     const video = document.querySelector('video');
     if (!video) {
-      console.error('[ScrollMaxxr] No video element found');
+      console.warn('[ScrollMaxxr] No video element found for screenshot');
       return null;
     }
 
@@ -216,6 +215,12 @@ async function captureScreenshot() {
     if (video.readyState < 2) {
       console.log('[ScrollMaxxr] Waiting for video to load...');
       await sleep(1000);
+      
+      // If still not ready, skip screenshot
+      if (video.readyState < 2) {
+        console.warn('[ScrollMaxxr] Video not ready, skipping screenshot');
+        return null;
+      }
     }
 
     // Create canvas
@@ -223,17 +228,28 @@ async function captureScreenshot() {
     canvas.width = Math.min(video.videoWidth || 720, 720);
     canvas.height = Math.min(video.videoHeight || 1280, 1280);
 
-    // Draw video frame to canvas
+    // If video dimensions are invalid, skip
+    if (canvas.width === 0 || canvas.height === 0) {
+      console.warn('[ScrollMaxxr] Invalid video dimensions, skipping screenshot');
+      return null;
+    }
+
+    // Draw video frame to canvas (this may fail due to CORS)
     const ctx = canvas.getContext('2d');
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
     // Convert to base64 JPEG (lower quality for faster upload)
     const screenshot = canvas.toDataURL('image/jpeg', 0.6);
     
-    console.log('[ScrollMaxxr] Screenshot captured:', screenshot.length, 'bytes');
+    console.log('[ScrollMaxxr] Screenshot captured successfully:', screenshot.length, 'bytes');
     return screenshot;
   } catch (error) {
-    console.error('[ScrollMaxxr] Error capturing screenshot:', error);
+    // CORS/Security error - this is expected for cross-origin videos
+    if (error.name === 'SecurityError' || error.message.includes('tainted')) {
+      console.warn('[ScrollMaxxr] Screenshot blocked by CORS policy (this is normal for TikTok videos)');
+    } else {
+      console.warn('[ScrollMaxxr] Screenshot capture failed:', error.message || error);
+    }
     return null;
   }
 }
