@@ -198,28 +198,40 @@ Username: @{username}"""
         logger.info("OpenAI response received")
         
         # Parse response
-        result_text = response.choices[0].message.content.strip()
-        logger.info(f"Raw response: {result_text[:200]}")
+        result_text = response.choices[0].message.content
         
-        # Extract JSON (handle markdown code blocks)
-        if '```json' in result_text:
-            result_text = result_text.split('```json')[1].split('```')[0].strip()
-        elif '```' in result_text:
-            result_text = result_text.split('```')[1].split('```')[0].strip()
-        
-        # Parse JSON
-        try:
-            result = json.loads(result_text)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse JSON: {e}")
-            logger.error(f"Response text: {result_text}")
-            # Try to extract boolean from text
-            is_match = 'true' in result_text.lower() or '"ismatch": true' in result_text.lower()
+        # Check if response is empty
+        if not result_text or not result_text.strip():
+            logger.error("OpenAI returned EMPTY response!")
+            logger.error(f"Full response object: {response}")
             result = {
-                'isMatch': is_match,
+                'isMatch': False,
                 'confidence': 0.5,
-                'reasoning': 'Failed to parse structured response'
+                'reasoning': 'OpenAI returned empty response'
             }
+        else:
+            result_text = result_text.strip()
+            logger.info(f"Raw response ({len(result_text)} chars): {result_text[:500]}")
+            
+            # Extract JSON (handle markdown code blocks)
+            if '```json' in result_text:
+                result_text = result_text.split('```json')[1].split('```')[0].strip()
+            elif '```' in result_text:
+                result_text = result_text.split('```')[1].split('```')[0].strip()
+            
+            # Parse JSON
+            try:
+                result = json.loads(result_text)
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON: {e}")
+                logger.error(f"Full response text ({len(result_text)} chars): '{result_text}'")
+                # Try to extract boolean from text
+                is_match = 'true' in result_text.lower() or '"ismatch": true' in result_text.lower()
+                result = {
+                    'isMatch': is_match,
+                    'confidence': 0.5,
+                    'reasoning': f'Failed to parse JSON: {result_text[:100]}'
+                }
         
         # Ensure isMatch is boolean
         if isinstance(result.get('isMatch'), str):

@@ -156,71 +156,141 @@ class TikTokBot:
             return None
         
         try:
+            # Wait a bit for page to stabilize
+            await asyncio.sleep(1)
+            
             # Find active video
             video = await self.page.query_selector('video')
             if not video:
                 logger.warning("No video element found")
                 return None
             
-            # Extract metadata using JavaScript
-            video_data = await self.page.evaluate("""
+            # DEBUG: Log page structure
+            page_info = await self.page.evaluate("""
                 () => {
-                    // Find active video container
-                    const videos = Array.from(document.querySelectorAll('video'));
-                    let activeVideo = null;
-                    
-                    for (const vid of videos) {
-                        const rect = vid.getBoundingClientRect();
-                        const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5;
-                        if (isVisible || !vid.paused) {
-                            activeVideo = vid;
-                            break;
-                        }
-                    }
-                    
-                    if (!activeVideo) return null;
-                    
-                    // Get container
-                    const container = activeVideo.closest('[data-e2e="recommend-list-item"]') ||
-                                     activeVideo.closest('div[class*="DivVideoContainer"]');
-                    
-                    if (!container) return null;
-                    
-                    // Extract username
-                    const usernameEl = container.querySelector('[data-e2e="browse-username"]') ||
-                                      container.querySelector('a[href^="/@"]');
-                    const username = usernameEl?.textContent?.trim().replace('@', '') || '';
-                    
-                    // Extract video ID
-                    const videoLink = container.querySelector('a[href*="/video/"]');
-                    const videoId = videoLink?.href.match(/\\/video\\/(\\d+)/)?.[1] || '';
-                    
-                    // Extract caption
-                    const captionEl = container.querySelector('[data-e2e="browse-video-desc"]') ||
-                                     container.querySelector('[data-e2e="video-desc"]');
-                    const caption = captionEl?.textContent?.trim() || '';
-                    
-                    // Extract hashtags
-                    const hashtagEls = container.querySelectorAll('a[href*="/tag/"]');
-                    const hashtags = Array.from(hashtagEls).map(el => 
-                        el.textContent.replace('#', '').trim()
-                    ).filter(Boolean);
-                    
-                    // Construct video URL
-                    const videoUrl = username && videoId ? 
-                        `https://www.tiktok.com/@${username}/video/${videoId}` : 
-                        window.location.href;
-                    
                     return {
-                        username,
-                        videoUrl,
-                        caption,
-                        hashtags
+                        url: window.location.href,
+                        videoCount: document.querySelectorAll('video').length,
+                        hasRecommendList: !!document.querySelector('[data-e2e="recommend-list-item"]'),
+                        hasVideoContainer: !!document.querySelector('div[class*="VideoContainer"]'),
+                        bodyClasses: document.body.className
                     };
                 }
             """)
+            logger.info(f"Page structure: {page_info}")
             
-            if not video_data:
+            # Extract metadata using JavaScript with extensive fallbacks
+            video_data = await self.page.evaluate("""
+                () => {
+                    try {
+                        // Find active video container (multiple strategies)
+                        const videos = Array.from(document.querySelectorAll('video'));
+                        if (videos.length === 0) return { error: 'No videos found' };
+                        
+                        let activeVideo = null;
+                        
+                        // Strategy 1: Find visible/playing video
+                        for (const vid of videos) {
+                            const rect = vid.getBoundingClientRect();
+                            const isVisible = rect.top >= -200 && rect.bottom <= window.innerHeight + 200;
+                            if ((isVisible && !vid.paused) || isVisible) {
+                                activeVideo = vid;
+                                break;
+                            }
+                        }
+                        
+                        // Strategy 2: Just take first video if none found
+                        if (!activeVideo) {
+                            activeVideo = videos[0];
+                        }
+                        
+                        if (!activeVideo) return { error: 'No active video' };
+                        
+                        // Get container (multiple fallback strategies)
+                        let container = activeVideo.closest('[data-e2e="recommend-list-item"]') ||
+                                       activeVideo.closest('div[class*="DivVideoContainer"]') ||
+                                       activeVideo.closest('div[class*="ItemContainer"]') ||
+                                       activeVideo.parentElement?.parentElement?.parentElement;
+                        
+                        // If no container, use whole document
+                        if (!container) {
+                            container = document.body;
+                        }
+                        
+                        // Extract username (multiple selectors)
+                        const usernameEl = document.querySelector('[data-e2e="browse-username"]') ||
+                                          document.querySelector('[data-e2e="video-author-uniqueid"]') ||
+                                          container.querySelector('a[href^="/@"]') ||
+                                          document.querySelector('a[href^="/@"]');
+                        let username = usernameEl?.textContent?.trim().replace('@', '') || '';
+                        
+                        // Try to get from URL as fallback
+                        if (!username) {
+                            const urlMatch = window.location.href.match(/\\/@([^/]+)/);
+                            username = urlMatch ? urlMatch[1] : '';
+                        }
+                        
+                        // Extract video ID (multiple strategies)
+                        const videoLink = container.querySelector('a[href*="/video/"]') ||
+                                         document.querySelector('a[href*="/video/"]');
+                        let videoId = videoLink?.href.match(/\\/video\\/(\\d+)/)?.[1] || '';
+                        
+                        // Try from URL
+                        if (!videoId) {
+                            const urlMatch = window.location.href.match(/\\/video\\/(\\d+)/);
+                            videoId = urlMatch ? urlMatch[1] : '';
+                        }
+                        
+                        // Extract caption (multiple selectors)
+                        const captionEl = container.querySelector('[data-e2e="browse-video-desc"]') ||
+                                         container.querySelector('[data-e2e="video-desc"]') ||
+                                         container.querySelector('[class*="DivContainer"] span') ||
+                                         document.querySelector('[data-e2e="browse-video-desc"]');
+                        const caption = captionEl?.textContent?.trim() || '';
+                        
+                        // Extract hashtags
+                        const hashtagEls = container.querySelectorAll('a[href*="/tag/"]');
+                        const hashtags = Array.from(hashtagEls).map(el => 
+                            el.textContent.replace('#', '').trim()
+                        ).filter(Boolean);
+                        
+                        // Construct video URL
+                        const videoUrl = username && videoId ? 
+                            `https://www.tiktok.com/@${username}/video/${videoId}` : 
+                            window.location.href;
+                        
+                        return {
+                            username: username || 'unknown',
+                            videoUrl,
+                            caption,
+                            hashtags,
+                            debug: {
+                                foundContainer: !!container,
+                                foundUsername: !!usernameEl,
+                                foundVideoLink: !!videoLink,
+                                videoCount: videos.length
+                            }
+                        };
+                    } catch (err) {
+                        return { error: err.toString() };
+                    }
+                }
+            """)
+            
+            logger.info(f"JS evaluation result: {video_data}")
+            
+            if not video_data or video_data.get('error'):
+                logger.error(f"Failed to extract: {video_data}")
+                return None
+            
+            # Remove debug info before returning
+            if 'debug' in video_data:
+                logger.info(f"Debug info: {video_data['debug']}")
+                del video_data['debug']
+            
+            # Validate we have minimal data
+            if not video_data.get('username') or video_data['username'] == 'unknown':
+                logger.warning("Could not identify username, skipping video")
                 return None
             
             # Capture screenshot
@@ -229,13 +299,13 @@ class TikTokBot:
             
             video_data['screenshot'] = f"data:image/jpeg;base64,{screenshot_base64}"
             
-            logger.info(f"Extracted video data: {video_data['videoUrl']}")
+            logger.info(f"✅ Extracted video: {video_data['videoUrl']}")
             self.stats['currentVideo'] = video_data['videoUrl']
             
             return video_data
             
         except Exception as e:
-            logger.error(f"Failed to extract video data: {e}")
+            logger.error(f"Failed to extract video data: {e}", exc_info=True)
             return None
     
     async def like_video(self):
