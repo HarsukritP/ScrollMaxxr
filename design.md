@@ -110,12 +110,15 @@
 │ 🎯 FYP Calibrator          [⚙️]   │  ← Header (60px)
 │ Optimize your scroll               │
 ├────────────────────────────────────┤
-│ Select Content Categories:         │  ← Category Section
+│ Select Content Category:           │  ← Category Section
+│ ┌────────────────────────────────┐ │
+│ │ 💻 Tech                      ▼ │ │  ← Dropdown
+│ └────────────────────────────────┘ │
 │                                    │
-│ [☐ 🔥 Thirst Traps] [☐ 😂 Skits]  │
-│ [☐ 🧠 Brainrot    ] [☐ 💻 Tech ]  │  ← 2-column grid
-│ [☐ 📰 News        ] [☐ ✂️ Edits]  │
-│ [☐ 📸 Photography ]                │
+│ Or describe your vibe:             │
+│ ┌────────────────────────────────┐ │
+│ │ E.g., "funny cat videos"...   │ │  ← Custom input
+│ └────────────────────────────────┘ │
 │                                    │
 ├────────────────────────────────────┤
 │ ┌────────────────────────────────┐ │  ← Primary CTA
@@ -202,35 +205,39 @@
 **Design:**
 ```
 ┌─────────────────────────────────────┐
-│ Select Content Categories:          │
+│ Select Content Category:            │
 │                                     │
-│ ┌──────────────┐  ┌──────────────┐ │
-│ │☐ 🔥 Thirst  │  │☐ 😂 Skits   │ │
-│ │   Traps     │  │             │ │
-│ └──────────────┘  └──────────────┘ │
-│ ┌──────────────┐  ┌──────────────┐ │
-│ │☐ 🧠 Brainrot│  │☐ 💻 Tech    │ │
-│ └──────────────┘  └──────────────┘ │
+│ ┌─────────────────────────────────┐ │
+│ │ 💻 Tech                      ▼ │ │  ← Dropdown
+│ └─────────────────────────────────┘ │
+│                                     │
+│ Or describe your vibe:              │
+│ ┌─────────────────────────────────┐ │
+│ │ E.g., "funny cat videos" or    │ │  ← Custom input
+│ │ "startup founder content"      │ │  (appears when selected)
+│ └─────────────────────────────────┘ │
 └─────────────────────────────────────┘
 ```
 
 **Specifications:**
-- **Grid:** 2 columns, 8px gap
-- **Card Size:** ~145px width, auto height
-- **Padding:** 12px inside each card
+- **Dropdown Width:** 100% (280px)
+- **Height:** 48px
 - **Border Radius:** 8px
 - **Background:** `--bg-secondary`
-- **Hover:** Scale 1.02, background: `--bg-tertiary`
-- **Checked:** Border 2px `--accent-primary`, background: `rgba(139, 92, 246, 0.1)`
+- **Border:** 2px solid `--border`
+- **Focus:** Border color changes to `--accent-primary`
+- **Options:** 7 preset categories + "Custom" option
+- **Custom Input:** Textarea, 80px height, appears when "Custom" selected
 
-**Category Labels:**
-- 🔥 Thirst Traps
-- 😂 Skits
-- 🧠 Brainrot
-- 💻 Tech
-- 📰 News
-- ✂️ Edits
-- 📸 Photography
+**Category Options:**
+- 🔥 Thirst Traps - Attractive people, flirty content, gym flexing
+- 😂 Skits - Comedy sketches, acting, POV content
+- 🧠 Brainrot - Memes, chaotic edits, Gen Z humor
+- 💻 Tech - Programming, gadgets, software, AI
+- 📰 News - Current events, politics, journalism
+- ✂️ Edits - AMVs, fan edits, transitions
+- 📸 Photography - Photo tips, camera gear, composition
+- ✨ Custom - Describe your own vibe
 
 **CSS:**
 ```css
@@ -245,54 +252,84 @@
   margin-bottom: 12px;
 }
 
-.category-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px;
-}
-
-.category-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
+.category-select {
+  width: 100%;
+  height: 48px;
+  padding: 0 16px;
   background: var(--bg-secondary);
-  border: 2px solid transparent;
+  border: 2px solid var(--border);
   border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 16px;
   cursor: pointer;
   transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-  user-select: none;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='%23a1a1aa' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 20px;
+  padding-right: 40px;
 }
 
-.category-item:hover {
-  background: var(--bg-tertiary);
-  transform: scale(1.02);
-}
-
-.category-item:active {
-  transform: scale(0.98);
-}
-
-.category-item input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  cursor: pointer;
-  accent-color: var(--accent-primary);
-}
-
-.category-item.checked {
-  background: rgba(139, 92, 246, 0.1);
+.category-select:hover {
   border-color: var(--accent-primary);
+  background-color: var(--bg-tertiary);
 }
 
-.category-item.checked span {
-  color: var(--accent-primary);
-  font-weight: 600;
+.category-select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
 }
 
-.category-item.disabled {
+.category-select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 12px;
+}
+
+.custom-description-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-top: 12px;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.custom-description {
+  width: 100%;
+  min-height: 80px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-family: inherit;
+  resize: vertical;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-top: 8px;
+}
+
+.custom-description:hover {
+  border-color: var(--accent-primary);
+  background-color: var(--bg-tertiary);
+}
+
+.custom-description:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.custom-description::placeholder {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.category-section.disabled {
   opacity: 0.5;
-  cursor: not-allowed;
+  pointer-events: none;
 }
 ```
 

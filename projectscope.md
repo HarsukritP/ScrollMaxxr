@@ -874,7 +874,7 @@ def calculate_confidence(llm_response: dict, text_signals: dict) -> float:
 ```
 1. USER INITIATES CALIBRATION
    ├─ Opens extension popup on TikTok page
-   ├─ Selects desired categories (e.g., "Tech", "Photography")
+   ├─ Selects desired category from dropdown (e.g., "Tech") OR enters custom description
    ├─ Clicks "Start Calibration"
    └─ Extension stores preferences in Chrome Storage
 
@@ -912,7 +912,8 @@ def calculate_confidence(llm_response: dict, text_signals: dict) -> float:
    │    "username": "techbro123",
    │    "videoUrl": "https://tiktok.com/@techbro123/video/123...",
    │    "screenshot": "data:image/jpeg;base64,/9j/4AAQSkZJRg...",
-   │    "selectedCategories": ["Tech", "Photography"]
+   │    "category": "Tech",
+   │    "categoryDescription": "Tech: Programming, gadgets, software, AI, tutorials, tech reviews, coding"
    │  }
    └─ Request time: ~10-50ms (network)
 
@@ -925,7 +926,7 @@ def calculate_confidence(llm_response: dict, text_signals: dict) -> float:
 
 7. LLM CLASSIFICATION
    ├─ Try Gemini Flash 1.5:
-   │  ├─ Build prompt with category descriptions
+   │  ├─ Build prompt with user's desired content description
    │  ├─ Attach image and text metadata
    │  ├─ Send to Gemini API
    │  ├─ Response time: ~500-800ms
@@ -934,11 +935,10 @@ def calculate_confidence(llm_response: dict, text_signals: dict) -> float:
    ├─ LLM analyzes:
    │  ├─ Visual: Code editor on screen, person typing
    │  ├─ Text: "Learning React hooks" + #coding
-   │  └─ Decision: Category="Tech", Confidence=0.92
+   │  ├─ User wants: "Tech: Programming, gadgets, software, AI"
+   │  └─ Decision: isMatch=true, Confidence=0.92
    │
-   └─ Check against selected categories:
-      ├─ "Tech" is in ["Tech", "Photography"] ✓
-      └─ isMatch = true
+   └─ Return result with reasoning
 
 8. RETURN CLASSIFICATION RESULT
    ├─ Backend → Background worker (HTTP response)

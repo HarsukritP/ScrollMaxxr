@@ -98,12 +98,15 @@ Automate 30 minutes of manual FYP curation in 2-3 minutes using AI.
 │  🎯 FYP Calibrator              │
 │  Optimize your scroll           │
 ├─────────────────────────────────┤
-│  Select Content Categories:     │
+│  Select Content Category:       │
+│  ┌───────────────────────────┐ │
+│  │ 💻 Tech                 ▼ │ │  ← Dropdown
+│  └───────────────────────────┘ │
 │                                 │
-│  ☐ 🔥 Thirst Traps  ☐ 😂 Skits  │
-│  ☐ 🧠 Brainrot      ☐ 💻 Tech   │
-│  ☐ 📰 News          ☐ ✂️ Edits  │
-│  ☐ 📸 Photography               │
+│  Or describe your vibe:         │
+│  ┌───────────────────────────┐ │
+│  │ E.g., "funny cat videos"  │ │  ← Custom input
+│  └───────────────────────────┘ │
 │                                 │
 │  ┌─────────────────────────┐   │
 │  │  Start Calibration  ▶   │   │
@@ -119,7 +122,8 @@ Automate 30 minutes of manual FYP curation in 2-3 minutes using AI.
 ```
 
 **Functionality Checklist:**
-- [ ] 7 category checkboxes (Thirst Traps, Skits, Brainrot, Tech, News, Edits, Photography)
+- [ ] Category dropdown with 8 options (7 presets + Custom)
+- [ ] Custom description textarea (shows when "Custom" selected)
 - [ ] "Start Calibration" button (primary CTA)
 - [ ] "Stop Calibration" button (hidden until active, red color)
 - [ ] Progress bar (animated gradient, 0-100%)
@@ -128,9 +132,10 @@ Automate 30 minutes of manual FYP curation in 2-3 minutes using AI.
   - Matches Found counter
   - Match Rate percentage
   - Status text (Ready / Running / Complete / Error)
-- [ ] Disable category checkboxes during calibration
-- [ ] Save selected categories to Chrome Storage
-- [ ] Load saved categories on popup open
+- [ ] Disable category selection during calibration
+- [ ] Save selected category and custom description to Chrome Storage
+- [ ] Load saved category on popup open
+- [ ] Validate custom description (min 10 characters)
 - [ ] Error message display area
 - [ ] Success celebration animation on completion
 
@@ -153,36 +158,30 @@ Automate 30 minutes of manual FYP curation in 2-3 minutes using AI.
 
     <!-- Category Selection -->
     <div class="categories">
-      <h3>Select Content Categories:</h3>
-      <div class="category-grid">
-        <label class="category-item">
-          <input type="checkbox" id="thirst-traps" value="Thirst Traps">
-          <span>🔥 Thirst Traps</span>
+      <h3>Select Content Category:</h3>
+      <select id="category-select" class="category-select">
+        <option value="">Choose a category...</option>
+        <option value="Thirst Traps">🔥 Thirst Traps - Attractive people, flirty content</option>
+        <option value="Skits">😂 Skits - Comedy sketches, POV content</option>
+        <option value="Brainrot">🧠 Brainrot - Memes, Gen Z humor</option>
+        <option value="Tech">💻 Tech - Programming, gadgets, AI</option>
+        <option value="News">📰 News - Current events, politics</option>
+        <option value="Edits">✂️ Edits - AMVs, transitions, fan edits</option>
+        <option value="Photography">📸 Photography - Photo tips, camera gear</option>
+        <option value="Custom">✨ Custom - Describe your own vibe</option>
+      </select>
+
+      <!-- Custom Description (hidden by default) -->
+      <div id="custom-section" style="display: none;">
+        <label for="custom-description" class="custom-description-label">
+          Or describe your vibe:
         </label>
-        <label class="category-item">
-          <input type="checkbox" id="skits" value="Skits">
-          <span>😂 Skits</span>
-        </label>
-        <label class="category-item">
-          <input type="checkbox" id="brainrot" value="Brainrot">
-          <span>🧠 Brainrot</span>
-        </label>
-        <label class="category-item">
-          <input type="checkbox" id="tech" value="Tech">
-          <span>💻 Tech</span>
-        </label>
-        <label class="category-item">
-          <input type="checkbox" id="news" value="News">
-          <span>📰 News</span>
-        </label>
-        <label class="category-item">
-          <input type="checkbox" id="edits" value="Edits">
-          <span>✂️ Edits</span>
-        </label>
-        <label class="category-item">
-          <input type="checkbox" id="photography" value="Photography">
-          <span>📸 Photography</span>
-        </label>
+        <textarea 
+          id="custom-description" 
+          class="custom-description"
+          placeholder="E.g., 'funny cat videos and wholesome animal content' or 'startup founder productivity tips'"
+          rows="3"
+        ></textarea>
       </div>
     </div>
 
@@ -244,30 +243,61 @@ const stopBtn = document.getElementById('stop-btn');
 const progressSection = document.getElementById('progress-section');
 const messageDiv = document.getElementById('message');
 
-// Category checkboxes
-const categoryCheckboxes = document.querySelectorAll('.category-item input');
+// Category elements
+const categorySelect = document.getElementById('category-select');
+const customSection = document.getElementById('custom-section');
+const customDescription = document.getElementById('custom-description');
 
-// Load saved categories
-chrome.storage.local.get(['selectedCategories'], (result) => {
-  if (result.selectedCategories) {
-    result.selectedCategories.forEach(cat => {
-      const checkbox = document.querySelector(`input[value="${cat}"]`);
-      if (checkbox) checkbox.checked = true;
-    });
+// Show/hide custom description based on selection
+categorySelect.addEventListener('change', () => {
+  if (categorySelect.value === 'Custom') {
+    customSection.style.display = 'block';
+  } else {
+    customSection.style.display = 'none';
+  }
+});
+
+// Load saved category and description
+chrome.storage.local.get(['selectedCategory', 'customDescription'], (result) => {
+  if (result.selectedCategory) {
+    categorySelect.value = result.selectedCategory;
+    if (result.selectedCategory === 'Custom' && result.customDescription) {
+      customSection.style.display = 'block';
+      customDescription.value = result.customDescription;
+    }
   }
 });
 
 // Start calibration
 startBtn.addEventListener('click', async () => {
-  const selectedCategories = getSelectedCategories();
+  const category = categorySelect.value;
   
-  if (selectedCategories.length === 0) {
-    showMessage('Please select at least one category', 'error');
+  // Validation
+  if (!category) {
+    showMessage('Please select a category', 'error');
     return;
   }
 
-  // Save categories
-  await chrome.storage.local.set({ selectedCategories });
+  let categoryDescription = category;
+  
+  // If custom, validate description
+  if (category === 'Custom') {
+    const customDesc = customDescription.value.trim();
+    if (!customDesc) {
+      showMessage('Please describe your desired content', 'error');
+      return;
+    }
+    if (customDesc.length < 10) {
+      showMessage('Description must be at least 10 characters', 'error');
+      return;
+    }
+    categoryDescription = customDesc;
+    // Save custom description
+    await chrome.storage.local.set({ customDescription: customDesc });
+  }
+
+  // Save category
+  await chrome.storage.local.set({ selectedCategory: category });
 
   // Update UI
   startBtn.style.display = 'none';
@@ -279,7 +309,8 @@ startBtn.addEventListener('click', async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   chrome.tabs.sendMessage(tab.id, {
     action: 'start',
-    categories: selectedCategories
+    category: category,
+    categoryDescription: categoryDescription
   });
 
   showMessage('Calibration started...', 'success');
@@ -306,12 +337,6 @@ chrome.runtime.onMessage.addListener((message) => {
 });
 
 // Helper functions
-function getSelectedCategories() {
-  return Array.from(categoryCheckboxes)
-    .filter(cb => cb.checked)
-    .map(cb => cb.value);
-}
-
 function updateStats(stats) {
   document.getElementById('videos-processed').textContent = stats.videosProcessed;
   document.getElementById('matches-found').textContent = stats.matchesFound;
@@ -338,7 +363,8 @@ function resetUI() {
 }
 
 function disableCategories(disabled) {
-  categoryCheckboxes.forEach(cb => cb.disabled = disabled);
+  categorySelect.disabled = disabled;
+  customDescription.disabled = disabled;
 }
 
 function showMessage(text, type) {
@@ -353,9 +379,13 @@ function showMessage(text, type) {
 
 **Testing:**
 - [ ] UI renders correctly (no layout issues)
-- [ ] Checkboxes toggle properly
-- [ ] Selected categories persist after closing popup
-- [ ] Start button disabled until category selected
+- [ ] Dropdown shows all 8 options
+- [ ] Custom section appears when "Custom" selected
+- [ ] Custom section hides when other option selected
+- [ ] Selected category persists after closing popup
+- [ ] Custom description persists after closing popup
+- [ ] Validation works (category required, custom min 10 chars)
+- [ ] Start button triggers calibration
 - [ ] Progress section shows/hides correctly
 - [ ] Stats update in real-time when messages received
 
@@ -381,7 +411,8 @@ function showMessage(text, type) {
 ```javascript
 // State
 let isCalibrating = false;
-let selectedCategories = [];
+let selectedCategory = '';
+let categoryDescription = '';
 let stats = {
   videosProcessed: 0,
   matchesFound: 0,
@@ -392,19 +423,21 @@ let stats = {
 // Listen for messages from popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'start') {
-    startCalibration(message.categories);
+    startCalibration(message.category, message.categoryDescription);
   } else if (message.action === 'stop') {
     stopCalibration();
   }
 });
 
 // Start calibration
-function startCalibration(categories) {
+function startCalibration(category, description) {
   isCalibrating = true;
-  selectedCategories = categories;
+  selectedCategory = category;
+  categoryDescription = description;
   stats = { videosProcessed: 0, matchesFound: 0, matchRate: 0, status: 'Running' };
   
-  console.log('🎯 Starting calibration with categories:', categories);
+  console.log('🎯 Starting calibration with category:', category);
+  console.log('📝 Description:', description);
   
   // Start processing current video
   processCurrentVideo();
@@ -518,7 +551,8 @@ async function extractVideoData() {
       username,
       videoUrl,
       screenshot,
-      selectedCategories
+      category: selectedCategory,
+      categoryDescription
     };
   } catch (error) {
     console.error('Error extracting video data:', error);
@@ -873,7 +907,8 @@ class VideoData(BaseModel):
     username: str
     videoUrl: str
     screenshot: str  # base64 encoded
-    selectedCategories: List[str]
+    category: str  # Preset category name or "Custom"
+    categoryDescription: str  # Description of desired content
 
 class ClassificationResult(BaseModel):
     isMatch: bool
@@ -904,7 +939,8 @@ async def classify_video(video_data: VideoData):
             caption=video_data.caption,
             hashtags=video_data.hashtags,
             username=video_data.username,
-            target_categories=video_data.selectedCategories
+            category=video_data.category,
+            category_description=video_data.categoryDescription
         )
         
         return result
@@ -1025,15 +1061,16 @@ CATEGORIES = {
     "Photography": "Photo tips, camera gear, composition, photo showcases, photography tutorials"
 }
 
-SYSTEM_PROMPT = """You are a TikTok content classifier. Analyze the video screenshot and metadata to determine which category it belongs to.
+SYSTEM_PROMPT = """You are a TikTok content classifier. Analyze the video screenshot and metadata to determine if it matches the user's desired content.
 
-Categories:
-{categories}
+User wants to see: {desired_content}
+
+Your task: Determine if this video matches what the user wants to see.
 
 Return ONLY a JSON object in this exact format:
-{{"category": "category_name", "confidence": 0.0-1.0, "reasoning": "brief explanation"}}
+{{"isMatch": true/false, "confidence": 0.0-1.0, "reasoning": "brief explanation"}}
 
-Be strict in classification. If unsure, use confidence < 0.5.
+Be strict in classification. If unsure or borderline, use isMatch: false and confidence < 0.5.
 """
 
 class LLMClassifier:
@@ -1046,26 +1083,28 @@ class LLMClassifier:
         caption: str,
         hashtags: List[str],
         username: str,
-        target_categories: List[str]
+        category: str,
+        category_description: str
     ) -> dict:
         """
         Classify video content using Gemini.
         """
         try:
-            # Build prompt
-            categories_str = "\n".join([
-                f"- {cat}: {CATEGORIES[cat]}"
-                for cat in CATEGORIES.keys()
-            ])
+            # Determine desired content description
+            if category == "Custom":
+                desired_content = category_description
+            else:
+                # Use preset category description
+                desired_content = f"{category}: {CATEGORIES.get(category, category_description)}"
             
-            system_prompt = SYSTEM_PROMPT.format(categories=categories_str)
+            system_prompt = SYSTEM_PROMPT.format(desired_content=desired_content)
             
             user_prompt = f"""
 Caption: {caption}
 Hashtags: {', '.join(hashtags)}
 Username: @{username}
 
-Analyze the image and text. Which category does this video belong to?
+Analyze the image and text. Does this video match what the user wants to see?
 Return JSON only.
 """
             
@@ -1090,12 +1129,9 @@ Return JSON only.
             
             result = json.loads(result_text)
             
-            # Check if category is in target categories
-            is_match = result['category'] in target_categories
-            
             return {
-                'isMatch': is_match,
-                'category': result['category'],
+                'isMatch': result['isMatch'],
+                'category': category,
                 'confidence': result.get('confidence', 0.5),
                 'reasoning': result.get('reasoning', '')
             }
@@ -1103,30 +1139,30 @@ Return JSON only.
         except Exception as e:
             print(f"Error in Gemini classification: {e}")
             # Fallback to rule-based
-            return self._rule_based_classify(caption, hashtags, target_categories)
+            return self._rule_based_classify(caption, hashtags, category, category_description)
     
-    def _rule_based_classify(self, caption: str, hashtags: List[str], target_categories: List[str]) -> dict:
+    def _rule_based_classify(self, caption: str, hashtags: List[str], category: str, category_description: str) -> dict:
         """
         Simple keyword-based classification as fallback.
         """
         text = (caption + ' ' + ' '.join(hashtags)).lower()
         
-        # Keyword matching
-        scores = {}
-        for category, description in CATEGORIES.items():
-            keywords = description.lower().split()
-            score = sum(1 for keyword in keywords if keyword in text)
-            scores[category] = score
+        # Extract keywords from description
+        if category == "Custom":
+            keywords = category_description.lower().split()
+        else:
+            keywords = CATEGORIES.get(category, category_description).lower().split()
         
-        # Get best match
-        best_category = max(scores, key=scores.get)
-        confidence = min(scores[best_category] / 5, 1.0)
+        # Count keyword matches
+        match_score = sum(1 for keyword in keywords if keyword in text)
+        confidence = min(match_score / max(len(keywords) / 2, 1), 1.0)
         
-        is_match = best_category in target_categories
+        # Simple threshold
+        is_match = match_score >= 2 or confidence >= 0.3
         
         return {
             'isMatch': is_match,
-            'category': best_category,
+            'category': category,
             'confidence': confidence,
             'reasoning': 'Fallback rule-based classification'
         }
