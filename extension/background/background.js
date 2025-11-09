@@ -21,6 +21,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 async function classifyVideo(videoData) {
   try {
     console.log('[ScrollMaxxr BG] Classifying video...');
+    console.log('[ScrollMaxxr BG] Video data:', {
+      category: videoData.category,
+      description: videoData.categoryDescription,
+      caption: videoData.caption?.substring(0, 50) + '...',
+      hashtags: videoData.hashtags,
+      username: videoData.username,
+      videoUrl: videoData.videoUrl,
+      hasScreenshot: !!videoData.screenshot
+    });
     
     const response = await fetch(`${BACKEND_URL}/api/classify`, {
       method: 'POST',
@@ -32,6 +41,7 @@ async function classifyVideo(videoData) {
 
     if (!response.ok) {
       const errorText = await response.text();
+      console.error('[ScrollMaxxr BG] API error response:', errorText);
       throw new Error(`API error: ${response.status} - ${errorText}`);
     }
 
