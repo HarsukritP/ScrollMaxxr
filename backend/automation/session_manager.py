@@ -162,8 +162,9 @@ class CalibrationSession:
                 if is_match:
                     logger.info(f"✅ MATCH! (confidence {confidence:.2f} >= {CONFIDENCE_THRESHOLD}) Liking video...")
                     await self.bot.like_video()
-                    # NOTE: like_video() uses DOUBLE-TAP method (like mobile TikTok) with extensive delays
-                    # Total delay inside like_video() is ~8-10 seconds to ensure like is committed
+                    # NOTE: like_video() uses DOUBLE-TAP method (like mobile TikTok) with up to 3 retry attempts
+                    # Total delay is ~8-10 seconds per attempt to ensure like is committed
+                    # If first attempt fails, will retry up to 2 more times before giving up
                     logger.info("Double-tap like action completed - video should remain liked")
                 else:
                     logger.info(f"❌ No match (confidence {confidence:.2f} < {CONFIDENCE_THRESHOLD}), skipping...")
