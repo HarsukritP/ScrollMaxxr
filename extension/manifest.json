@@ -10,7 +10,8 @@
     "tabs"
   ],
   "host_permissions": [
-    "*://*.tiktok.com/*"
+    "*://*.tiktok.com/*",
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup/popup.html"

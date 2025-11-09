@@ -78,56 +78,16 @@ async function captureTabScreenshot(tabId, cropData) {
       quality: 60
     });
 
-    console.log('[ScrollMaxxr BG] Screenshot captured, processing...');
+    console.log('[ScrollMaxxr BG] Screenshot captured successfully');
 
-    // If crop data provided, crop to video area
-    if (cropData && cropData.width > 0 && cropData.height > 0) {
-      return await cropImage(dataUrl, cropData);
-    }
-
+    // For now, return full screenshot without cropping
+    // Service workers don't have easy access to Image/Canvas APIs
+    // The screenshot is still useful for classification even without cropping
     return dataUrl;
   } catch (error) {
     console.error('[ScrollMaxxr BG] Screenshot capture failed:', error);
     throw error;
   }
-}
-
-// Crop image to video bounds
-async function cropImage(dataUrl, cropData) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      try {
-        // Create canvas for cropping
-        const canvas = new OffscreenCanvas(
-          Math.min(cropData.width, 720),
-          Math.min(cropData.height, 1280)
-        );
-        const ctx = canvas.getContext('2d');
-
-        // Draw cropped region
-        ctx.drawImage(
-          img,
-          cropData.x, cropData.y, cropData.width, cropData.height,  // Source
-          0, 0, canvas.width, canvas.height  // Destination (scaled down if needed)
-        );
-
-        // Convert to base64 JPEG
-        canvas.convertToBlob({ type: 'image/jpeg', quality: 0.6 })
-          .then(blob => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          })
-          .catch(reject);
-      } catch (error) {
-        reject(error);
-      }
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
 }
 
 // Test backend connection on install
