@@ -404,9 +404,11 @@ class TikTokBot:
                             hashtags,
                             debug: {
                                 foundContainer: !!container,
-                                foundUsername: !!usernameEl,
+                                foundUsername: !!username,
                                 foundVideoLink: !!videoLink,
-                                videoCount: videos.length
+                                videoCount: videos.length,
+                                extractedVideoId: videoId || 'none',
+                                extractionMethod: videoLink ? 'video-link' : 'url-parse'
                             }
                         };
                     } catch (err) {
@@ -456,89 +458,78 @@ class TikTokBot:
             return None
     
     async def like_video(self):
-        """Like the current video by finding and clicking the button element"""
+        """Like the current video using EXACT selectors from TikTok's DOM"""
         if not self.page:
             return False
         
         try:
-            logger.info("🔍 Looking for like button element...")
+            logger.info("🔍 Looking for like button...")
             
-            # Try multiple selectors to find the BUTTON element (not icon)
-            button_selectors = [
-                'button[data-e2e="browse-like"]',
-                'button[data-e2e="like-button"]',
-            ]
+            # Use the EXACT selector from real TikTok DOM inspection
+            # Button has aria-label starting with "Like video"
+            like_button = await self.page.query_selector('button[aria-label^="Like video"]')
             
-            like_button_element = None
-            used_selector = None
-            
-            for selector in button_selectors:
-                try:
-                    btn = await self.page.query_selector(selector)
-                    if btn:
-                        like_button_element = btn
-                        used_selector = selector
-                        logger.info(f"Found button element with: {selector}")
-                        break
-                except Exception as e:
-                    continue
-            
-            # Fallback: Find the like icon and get its parent button
-            if not like_button_element:
-                logger.info("Trying fallback: finding parent button of like icon...")
-                icon = await self.page.query_selector('[data-e2e="like-icon"]')
-                if icon:
-                    like_button_element = await icon.evaluate_handle('el => el.closest("button")')
-                    used_selector = 'like-icon >> parent button'
-                    logger.info(f"Found parent button of like icon")
-            
-            if not like_button_element:
-                logger.error("❌ Could not find like button element")
+            if not like_button:
+                logger.warning("❌ Like button not found with aria-label selector")
                 return False
             
-            # Check if already liked
-            is_liked_before = await like_button_element.evaluate("""
-                (el) => {
-                    const svg = el.querySelector('svg');
-                    const fill = svg?.getAttribute('fill') || '';
-                    return fill.includes('254') || fill.includes('rgb(254, 44, 85)') || fill.includes('#FE2C55');
+            logger.info("Found like button: button[aria-label^='Like video']")
+            
+            # Check if already liked by examining the span's color style
+            # When not liked: color: rgb(22, 24, 35) (black)
+            # When liked: color: rgb(254, 44, 85) (TikTok red)
+            is_liked_before = await like_button.evaluate("""
+                (btn) => {
+                    const span = btn.querySelector('span[data-e2e="like-icon"]');
+                    if (!span) return false;
+                    
+                    const color = span.style.color || window.getComputedStyle(span).color;
+                    // Check if it's TikTok red
+                    return color.includes('254') || color.includes('FE2C');
                 }
             """)
             
             if is_liked_before:
-                logger.info(f"ℹ️ Video already liked (selector: {used_selector})")
+                logger.info("ℹ️ Video already liked (span color is red)")
                 return True
             
-            # Click the button element directly with Playwright (generates proper events)
-            logger.info(f"Clicking button element with Playwright.click()...")
-            await like_button_element.click(force=True, delay=100)  # delay=100ms simulates human click duration
+            # Click the button using Playwright's click (generates real mouse events)
+            logger.info("Clicking like button with Playwright.click()...")
+            await like_button.click(delay=100)  # 100ms delay simulates human click
             
-            # Wait for like animation and network request
-            await asyncio.sleep(1.5)
+            # Wait for like animation and API call to complete
+            await asyncio.sleep(2.0)  # Longer wait for TikTok's API
             
-            # Verify the like by checking SVG fill color
-            is_liked_after = await self.page.evaluate("""
-                () => {
-                    const icon = document.querySelector('[data-e2e="like-icon"]') ||
-                                document.querySelector('[data-e2e="browse-like-icon"]');
+            # Verify the like by checking if span color changed to red
+            is_liked_after = await like_button.evaluate("""
+                (btn) => {
+                    const span = btn.querySelector('span[data-e2e="like-icon"]');
+                    if (!span) return false;
                     
-                    if (!icon) return false;
-                    
-                    const button = icon.closest('button');
-                    const svg = button?.querySelector('svg') || icon.querySelector('svg') || icon;
-                    const fill = svg?.getAttribute('fill') || '';
-                    
-                    // TikTok red color = liked
-                    return fill.includes('254') || fill.includes('rgb(254, 44, 85)') || fill.includes('#FE2C55');
+                    const color = span.style.color || window.getComputedStyle(span).color;
+                    // TikTok red = rgb(254, 44, 85)
+                    return color.includes('254') || color.includes('FE2C') || color.includes('rgb(254, 44, 85)');
                 }
             """)
             
             if is_liked_after:
-                logger.info(f"✅ Video LIKED successfully! Heart turned red ❤️ (selector: {used_selector})")
+                logger.info("✅ Video LIKED successfully! Span color changed to red ❤️")
             else:
-                logger.error(f"❌ Like failed - heart didn't turn red after clicking")
-                logger.error(f"   Selector used: {used_selector}")
-                logger.error(f"   Check visible browser to see if TikTok is blocking likes")
+                # Log detailed debugging info
+                debug_info = await like_button.evaluate("""
+                    (btn) => {
+                        const span = btn.querySelector('span[data-e2e="like-icon"]');
+                        return {
+                            spanFound: !!span,
+                            spanColor: span?.style.color || window.getComputedStyle(span).color,
+                            ariaLabel: btn.getAttribute('aria-label'),
+                            buttonClasses: btn.className
+                        };
+                    }
+                """)
+                logger.error(f"❌ Like verification failed")
+                logger.error(f"   Debug info: {debug_info}")
+                logger.error(f"   TikTok may be blocking likes or color didn't update")
             
             await asyncio.sleep(0.3)
             return True
