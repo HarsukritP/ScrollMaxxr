@@ -20,6 +20,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(screenshot => sendResponse({ screenshot }))
       .catch(error => sendResponse({ error: error.message }));
     return true; // Keep message channel open for async response
+  } else if (message.action === 'focusTab') {
+    // Focus the TikTok tab so user can see calibration happening
+    if (sender.tab) {
+      chrome.tabs.update(sender.tab.id, { active: true });
+      chrome.windows.update(sender.tab.windowId, { focused: true });
+    }
+    sendResponse({ success: true });
   }
 });
 

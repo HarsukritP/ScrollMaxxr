@@ -37,6 +37,17 @@ function startCalibration(category, description) {
   console.log('[ScrollMaxxr] Category:', category);
   console.log('[ScrollMaxxr] Description:', description);
   
+  // Save state to survive page navigation/refresh
+  chrome.storage.local.set({
+    isCalibrating: true,
+    selectedCategory: category,
+    categoryDescription: description,
+    stats: stats
+  });
+  
+  // Make TikTok tab active and focused (so user can see it working)
+  chrome.runtime.sendMessage({ action: 'focusTab' });
+  
   // Start processing current video
   processCurrentVideo();
 }
@@ -46,6 +57,9 @@ function stopCalibration() {
   isCalibrating = false;
   stats.status = 'Stopped';
   console.log('[ScrollMaxxr] Calibration stopped');
+  
+  // Clear saved state
+  chrome.storage.local.remove(['isCalibrating', 'selectedCategory', 'categoryDescription', 'stats']);
 }
 
 // Process current video
@@ -342,15 +356,31 @@ async function likeVideo() {
 // Scroll to next video
 async function scrollToNextVideo() {
   try {
-    // Smooth scroll down one viewport height
+    // Method 1: Try pressing Arrow Down (most reliable for TikTok FYP)
+    const videoContainer = document.querySelector('video')?.closest('[data-e2e="recommend-list-item"]');
+    
+    if (videoContainer) {
+      // Simulate arrow down keypress (TikTok's native navigation)
+      document.dispatchEvent(new KeyboardEvent('keydown', {
+        key: 'ArrowDown',
+        code: 'ArrowDown',
+        keyCode: 40,
+        which: 40,
+        bubbles: true
+      }));
+      
+      console.log('[ScrollMaxxr] Pressed Arrow Down to navigate to next video');
+      await sleep(randomDelay(1500, 2500));
+      return;
+    }
+    
+    // Method 2: Fallback to scrolling
     window.scrollBy({
       top: window.innerHeight,
       behavior: 'smooth'
     });
 
-    console.log('[ScrollMaxxr] Scrolled to next video');
-    
-    // Wait for scroll and video load
+    console.log('[ScrollMaxxr] Scrolled to next video (fallback method)');
     await sleep(randomDelay(1500, 2500));
   } catch (error) {
     console.error('[ScrollMaxxr] Error scrolling:', error);
@@ -408,6 +438,21 @@ function isExtensionContextValid() {
     return false;
   }
 }
+
+// Restore state on page load (in case of tab switch/navigation)
+chrome.storage.local.get(['isCalibrating', 'selectedCategory', 'categoryDescription', 'stats'], (result) => {
+  if (result.isCalibrating) {
+    console.log('[ScrollMaxxr] Restoring calibration state...');
+    isCalibrating = result.isCalibrating;
+    selectedCategory = result.selectedCategory;
+    categoryDescription = result.categoryDescription;
+    stats = result.stats || { videosProcessed: 0, matchesFound: 0, matchRate: 0, status: 'Running' };
+    
+    // Resume calibration
+    console.log('[ScrollMaxxr] Resuming calibration for:', selectedCategory);
+    setTimeout(processCurrentVideo, 2000); // Wait for page to load
+  }
+});
 
 // Initialize
 console.log('[ScrollMaxxr] Content script loaded on TikTok');
