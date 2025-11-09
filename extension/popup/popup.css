@@ -456,3 +456,27 @@ body.celebration .container {
   75% { transform: scale(1.02) rotate(0.5deg); }
 }
 
+/* Current Video */
+.current-video {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.current-video .section-label {
+  margin-bottom: 8px;
+}
+
+.current-video-url {
+  font-size: 12px;
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  word-break: break-all;
+  line-height: 1.4;
+  max-height: 60px;
+  overflow-y: auto;
+}
+
