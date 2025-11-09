@@ -356,32 +356,64 @@ async function likeVideo() {
 // Scroll to next video
 async function scrollToNextVideo() {
   try {
-    // Method 1: Try pressing Arrow Down (most reliable for TikTok FYP)
-    const videoContainer = document.querySelector('video')?.closest('[data-e2e="recommend-list-item"]');
+    console.log('[ScrollMaxxr] Attempting to scroll to next video...');
     
-    if (videoContainer) {
-      // Simulate arrow down keypress (TikTok's native navigation)
-      document.dispatchEvent(new KeyboardEvent('keydown', {
-        key: 'ArrowDown',
-        code: 'ArrowDown',
-        keyCode: 40,
-        which: 40,
-        bubbles: true
-      }));
+    // Get current video URL to verify we actually moved
+    const currentUrl = window.location.href;
+    
+    // Method 1: Click the down navigation button (most reliable)
+    const downButton = document.querySelector('[data-e2e="arrow-down"]') ||
+                      document.querySelector('button[aria-label*="Down"]') ||
+                      document.querySelector('[class*="arrow-bottom"]');
+    
+    if (downButton && downButton.offsetParent !== null) {
+      console.log('[ScrollMaxxr] Clicking down arrow button');
+      downButton.click();
+      await sleep(randomDelay(2000, 3000));
       
-      console.log('[ScrollMaxxr] Pressed Arrow Down to navigate to next video');
-      await sleep(randomDelay(1500, 2500));
+      // Verify we moved
+      if (window.location.href !== currentUrl) {
+        console.log('[ScrollMaxxr] ✅ Successfully navigated to next video');
+        return;
+      }
+    }
+    
+    // Method 2: Arrow Down keypress
+    console.log('[ScrollMaxxr] Trying Arrow Down key...');
+    window.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'ArrowDown',
+      code: 'ArrowDown',
+      keyCode: 40,
+      which: 40,
+      bubbles: true,
+      cancelable: true
+    }));
+    
+    await sleep(randomDelay(2000, 3000));
+    
+    // Verify we moved
+    if (window.location.href !== currentUrl) {
+      console.log('[ScrollMaxxr] ✅ Arrow Down worked - navigated to next video');
       return;
     }
     
-    // Method 2: Fallback to scrolling
-    window.scrollBy({
-      top: window.innerHeight,
+    // Method 3: Aggressive scroll
+    console.log('[ScrollMaxxr] Trying aggressive scroll...');
+    const scrollAmount = window.innerHeight * 1.2;
+    window.scrollTo({
+      top: window.scrollY + scrollAmount,
       behavior: 'smooth'
     });
-
-    console.log('[ScrollMaxxr] Scrolled to next video (fallback method)');
-    await sleep(randomDelay(1500, 2500));
+    
+    await sleep(randomDelay(2000, 3000));
+    
+    // Log result
+    if (window.location.href !== currentUrl) {
+      console.log('[ScrollMaxxr] ✅ Scroll worked - navigated to next video');
+    } else {
+      console.warn('[ScrollMaxxr] ⚠️ All scroll methods failed - URL unchanged');
+      console.log('[ScrollMaxxr] Current URL:', currentUrl);
+    }
   } catch (error) {
     console.error('[ScrollMaxxr] Error scrolling:', error);
   }
