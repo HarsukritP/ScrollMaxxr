@@ -91,17 +91,53 @@ async def shutdown_event():
 
 # Run server
 if __name__ == "__main__":
+    import signal
+    import sys
+    
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", 8000))
     
     print(f"\nStarting server at http://{host}:{port}")
     print(f"API Documentation: http://localhost:{port}/docs\n")
     
-    uvicorn.run(
-        "main:app",
-        host=host,
-        port=port,
-        reload=True,  # Enable hot-reload in development
-        log_level="info"
-    )
+    # Signal handler for graceful shutdown
+    def signal_handler(sig, frame):
+        print("\n\n🛑 Shutting down gracefully...")
+        print("Stopping all Playwright sessions...")
+        
+        # Force stop all sessions synchronously
+        import asyncio
+        from automation.session_manager import list_sessions, stop_session
+        
+        active_sessions = list_sessions()
+        if active_sessions:
+            print(f"Found {len(active_sessions)} active sessions")
+            for session_id in active_sessions:
+                try:
+                    # Run stop_session synchronously
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(stop_session(session_id))
+                    loop.close()
+                    print(f"✅ Stopped session {session_id}")
+                except Exception as e:
+                    print(f"Error stopping session {session_id}: {e}")
+        
+        print("✅ All sessions stopped. Goodbye!")
+        sys.exit(0)
+    
+    # Register signal handlers
+    signal.signal(signal.SIGINT, signal_handler)  # Ctrl+C
+    signal.signal(signal.SIGTERM, signal_handler)  # kill command
+    
+    try:
+        uvicorn.run(
+            "main:app",
+            host=host,
+            port=port,
+            reload=True,  # Enable hot-reload in development
+            log_level="info"
+        )
+    except KeyboardInterrupt:
+        signal_handler(None, None)
 

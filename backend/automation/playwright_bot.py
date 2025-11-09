@@ -45,9 +45,16 @@ class TikTokBot:
             # Launch Playwright
             self.playwright = await async_playwright().start()
             
-            # Launch Chromium in headless mode with stealth
+            # Check if debug mode (show browser window)
+            import os
+            headless_mode = os.getenv('HEADLESS', 'true').lower() == 'true'
+            
+            if not headless_mode:
+                logger.info("🎬 LAUNCHING VISIBLE BROWSER (debug mode)")
+            
+            # Launch Chromium with stealth
             self.browser = await self.playwright.chromium.launch(
-                headless=True,
+                headless=headless_mode,  # Can be disabled via HEADLESS=false in .env
                 args=[
                     '--disable-blink-features=AutomationControlled',
                     '--disable-dev-shm-usage',
@@ -293,13 +300,25 @@ class TikTokBot:
                 logger.warning("Could not identify username, skipping video")
                 return None
             
-            # Capture screenshot
-            screenshot_bytes = await video.screenshot(type='jpeg', quality=60)
-            screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+            # Capture MULTIPLE screenshots (3-5 frames) for better analysis
+            # Single frame can be blurry/random, multiple frames give better context
+            logger.info("Capturing multiple frames...")
+            screenshots = []
+            for i in range(4):  # Capture 4 frames
+                screenshot_bytes = await video.screenshot(type='jpeg', quality=60)
+                screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                screenshots.append(f"data:image/jpeg;base64,{screenshot_base64}")
+                
+                # Small delay between captures (0.3s = ~9 frames at 30fps)
+                if i < 3:  # Don't wait after last capture
+                    await asyncio.sleep(0.3)
             
-            video_data['screenshot'] = f"data:image/jpeg;base64,{screenshot_base64}"
+            # For now, send the middle frame (most likely to be stable)
+            # TODO: Send all frames to GPT for multi-frame analysis
+            video_data['screenshot'] = screenshots[1]  # 2nd frame (index 1)
+            video_data['allScreenshots'] = screenshots  # Store all for potential use
             
-            logger.info(f"✅ Extracted video: {video_data['videoUrl']}")
+            logger.info(f"✅ Extracted video with {len(screenshots)} frames: {video_data['videoUrl']}")
             self.stats['currentVideo'] = video_data['videoUrl']
             
             return video_data

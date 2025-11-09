@@ -10,6 +10,16 @@ const BACKEND_URL = 'http://localhost:8000';
 let activeSessionId = null;
 let statsWebSocket = null;
 
+// Restore active session on service worker startup
+chrome.storage.local.get(['activeSessionId'], (result) => {
+  if (result.activeSessionId) {
+    activeSessionId = result.activeSessionId;
+    console.log('[ScrollMaxxr BG] Restored session:', activeSessionId);
+    // Reconnect to WebSocket
+    connectStatsWebSocket(activeSessionId);
+  }
+});
+
 // Handle messages from content script and popup
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.action === 'classify') {
@@ -188,6 +198,9 @@ async function startPlaywrightSession({ category, categoryDescription }) {
     const result = await response.json();
     activeSessionId = result.session_id;
     
+    // Persist session ID to storage
+    await chrome.storage.local.set({ activeSessionId: activeSessionId });
+    
     console.log('[ScrollMaxxr BG] Session started:', activeSessionId);
     
     // Connect to WebSocket for live stats
@@ -232,6 +245,9 @@ async function stopPlaywrightSession() {
     
     const result = await response.json();
     activeSessionId = null;
+    
+    // Clear session ID from storage
+    await chrome.storage.local.remove('activeSessionId');
     
     console.log('[ScrollMaxxr BG] Session stopped');
     
