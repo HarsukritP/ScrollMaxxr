@@ -1,20 +1,21 @@
 """
 LLM Classifier for TikTok Content
-Uses Gemini Flash 1.5 for multimodal video classification with fallback options.
+Uses OpenAI GPT-5-nano for multimodal video classification.
 """
 
-import google.generativeai as genai
+from openai import OpenAI
 import os
 from PIL import Image
 import io
 import json
 from typing import List
 import logging
+import base64
 
 logger = logging.getLogger(__name__)
 
-# Configure Gemini API
-genai.configure(api_key=os.getenv('GEMINI_API_KEY'))
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
 # Category definitions (for preset categories)
 CATEGORIES = {
@@ -42,33 +43,21 @@ or
 {{"isMatch": false, "confidence": 0.3, "reasoning": "brief explanation"}}
 
 Be strict in classification. If unsure or borderline, use isMatch: false and confidence < 0.5.
-Focus on both visual elements in the screenshot AND text content (caption, hashtags).
-"""
+Focus on both visual elements in the screenshot AND text content (caption, hashtags)."""
 
 
 class LLMClassifier:
     """
-    Multimodal LLM classifier for TikTok content.
-    Uses Gemini Flash 1.5 as primary, with fallback options.
+    Multimodal LLM classifier for TikTok content using OpenAI GPT-5-nano.
     """
     
     def __init__(self):
-        """Initialize the classifier with Gemini model"""
-        try:
-            self.model = genai.GenerativeModel('gemini-1.5-flash')
-            logger.info("✅ Gemini Flash 1.5 model initialized")
-        except Exception as e:
-            logger.error(f"❌ Failed to initialize Gemini model: {e}")
-            self.model = None
+        """Initialize the classifier with OpenAI client"""
+        if not os.getenv('OPENAI_API_KEY'):
+            logger.error("OpenAI API key not found in environment variables")
+            raise ValueError("OPENAI_API_KEY environment variable is required")
         
-        # Check for fallback API keys
-        self.has_openai = bool(os.getenv('OPENAI_API_KEY'))
-        self.has_anthropic = bool(os.getenv('ANTHROPIC_API_KEY'))
-        
-        if self.has_openai:
-            logger.info("✅ OpenAI API key found (fallback available)")
-        if self.has_anthropic:
-            logger.info("✅ Anthropic API key found (fallback available)")
+        logger.info("OpenAI GPT-5-nano classifier initialized")
     
     async def classify(
         self,
@@ -80,7 +69,7 @@ class LLMClassifier:
         category_description: str
     ) -> dict:
         """
-        Classify video content using Gemini.
+        Classify video content using OpenAI GPT-5-nano.
         
         Args:
             image: Video screenshot as bytes
@@ -101,24 +90,22 @@ class LLMClassifier:
                 # Use preset category description
                 desired_content = f"{category}: {CATEGORIES.get(category, category_description)}"
             
-            logger.info(f"🎯 Classifying for: {desired_content}")
+            logger.info(f"Classifying for: {desired_content}")
             
-            # Try Gemini first
-            if self.model:
-                try:
-                    result = await self._classify_with_gemini(
-                        image, caption, hashtags, username, desired_content, category
-                    )
-                    return result
-                except Exception as e:
-                    logger.warning(f"⚠️ Gemini classification failed: {e}")
-            
-            # Fallback to rule-based if Gemini fails
-            logger.warning("⚠️ Falling back to rule-based classification")
-            return self._rule_based_classify(caption, hashtags, category, category_description)
+            # Try OpenAI classification
+            try:
+                result = await self._classify_with_openai(
+                    image, caption, hashtags, username, desired_content, category
+                )
+                return result
+            except Exception as e:
+                logger.warning(f"OpenAI classification failed: {e}")
+                # Fallback to rule-based
+                logger.warning("Falling back to rule-based classification")
+                return self._rule_based_classify(caption, hashtags, category, category_description)
             
         except Exception as e:
-            logger.error(f"❌ Classification error: {e}")
+            logger.error(f"Classification error: {e}")
             # Return a safe fallback result
             return {
                 'isMatch': False,
@@ -127,7 +114,7 @@ class LLMClassifier:
                 'reasoning': f'Classification failed: {str(e)}'
             }
     
-    async def _classify_with_gemini(
+    async def _classify_with_openai(
         self,
         image: bytes,
         caption: str,
@@ -136,37 +123,58 @@ class LLMClassifier:
         desired_content: str,
         category: str
     ) -> dict:
-        """Classify using Gemini Flash 1.5"""
+        """Classify using OpenAI GPT-5-nano"""
         
         # Build system prompt
         system_prompt = SYSTEM_PROMPT.format(desired_content=desired_content)
         
         # Build user prompt with metadata
-        user_prompt = f"""
-Caption: {caption}
+        user_prompt = f"""Caption: {caption}
 Hashtags: {', '.join(hashtags) if hashtags else 'None'}
 Username: @{username}
 
 Analyze the image and text above. Does this video match what the user wants to see?
-Return JSON only (no other text).
-"""
+Return JSON only (no other text)."""
         
-        # Load image
-        img = Image.open(io.BytesIO(image))
-        logger.info(f"📸 Image loaded: {img.size} {img.format}")
+        # Encode image to base64
+        image_base64 = base64.b64encode(image).decode('utf-8')
         
-        # Generate classification
-        response = self.model.generate_content([
-            system_prompt,
-            user_prompt,
-            img
-        ])
+        logger.info("Sending request to OpenAI GPT-5-nano...")
         
-        logger.info(f"🤖 Gemini response received")
+        # Call OpenAI API with vision
+        response = client.chat.completions.create(
+            model="gpt-5-nano-2025-08-07",
+            messages=[
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": user_prompt
+                        },
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/jpeg;base64,{image_base64}",
+                                "detail": "low"  # Use low detail for faster processing
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=300,
+            temperature=0.3  # Lower temperature for more consistent results
+        )
+        
+        logger.info("OpenAI response received")
         
         # Parse response
-        result_text = response.text.strip()
-        logger.info(f"📝 Raw response: {result_text[:200]}")
+        result_text = response.choices[0].message.content.strip()
+        logger.info(f"Raw response: {result_text[:200]}")
         
         # Extract JSON (handle markdown code blocks)
         if '```json' in result_text:
@@ -181,7 +189,7 @@ Return JSON only (no other text).
             logger.error(f"Failed to parse JSON: {e}")
             logger.error(f"Response text: {result_text}")
             # Try to extract boolean from text
-            is_match = 'true' in result_text.lower() or 'match' in result_text.lower()
+            is_match = 'true' in result_text.lower() or '"ismatch": true' in result_text.lower()
             result = {
                 'isMatch': is_match,
                 'confidence': 0.5,
@@ -204,7 +212,7 @@ Return JSON only (no other text).
         if 'reasoning' not in result:
             result['reasoning'] = 'No reasoning provided'
         
-        logger.info(f"✅ Classification: {result}")
+        logger.info(f"Classification complete: {result}")
         
         return result
     
@@ -218,7 +226,7 @@ Return JSON only (no other text).
         """
         Simple keyword-based classification as fallback.
         """
-        logger.info("🔄 Using rule-based classification")
+        logger.info("Using rule-based classification")
         
         # Combine caption and hashtags
         text = (caption + ' ' + ' '.join(hashtags)).lower()
@@ -249,7 +257,6 @@ Return JSON only (no other text).
             'reasoning': f'Keyword matching: {match_score}/{len(keywords)} keywords found (fallback method)'
         }
         
-        logger.info(f"✅ Rule-based result: {result}")
+        logger.info(f"Rule-based result: {result}")
         
         return result
-

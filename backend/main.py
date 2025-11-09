@@ -63,25 +63,24 @@ async def health_check():
 async def startup_event():
     """Run on server startup"""
     print("=" * 50)
-    print("🎯 ScrollMaxxr Backend Starting...")
-    print(f"📍 Environment: {os.getenv('ENVIRONMENT', 'development')}")
-    print(f"🔑 Gemini API Key: {'✅ Set' if os.getenv('GEMINI_API_KEY') else '❌ Missing'}")
-    print(f"🔑 OpenAI API Key: {'✅ Set' if os.getenv('OPENAI_API_KEY') else '⚠️  Optional'}")
+    print("ScrollMaxxr Backend Starting...")
+    print(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
+    print(f"OpenAI API Key: {'✅ Set' if os.getenv('OPENAI_API_KEY') else '❌ Missing'}")
     print("=" * 50)
 
 # Shutdown event
 @app.on_event("shutdown")
 async def shutdown_event():
     """Run on server shutdown"""
-    print("🛑 ScrollMaxxr Backend Shutting Down...")
+    print("ScrollMaxxr Backend Shutting Down...")
 
 # Run server
 if __name__ == "__main__":
     host = os.getenv("HOST", "0.0.0.0")
     port = int(os.getenv("PORT", 8000))
     
-    print(f"\n🚀 Starting server at http://{host}:{port}")
-    print(f"📚 API Documentation: http://localhost:{port}/docs\n")
+    print(f"\nStarting server at http://{host}:{port}")
+    print(f"API Documentation: http://localhost:{port}/docs\n")
     
     uvicorn.run(
         "main:app",
