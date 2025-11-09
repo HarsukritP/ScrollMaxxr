@@ -192,7 +192,7 @@ Username: @{username}"""
                     ]
                 }
             ],
-            max_completion_tokens=300  # GPT-5-nano uses max_completion_tokens, default temperature only
+            max_completion_tokens=1000  # Increased for reasoning_tokens (300) + actual response content
         )
         
         logger.info("OpenAI response received")
