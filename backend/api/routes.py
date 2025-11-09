@@ -65,7 +65,8 @@ async def classify_video(video_data: VideoData):
             hashtags=video_data.hashtags,
             username=video_data.username,
             category=video_data.category,
-            category_description=video_data.categoryDescription
+            category_description=video_data.categoryDescription,
+            video_url=video_data.videoUrl  # Pass video URL for transcript fetching
         )
         
         logger.info(f"Classification result: {result}")

@@ -66,7 +66,9 @@ class LLMClassifier:
         hashtags: List[str],
         username: str,
         category: str,
-        category_description: str
+        category_description: str,
+        video_url: str = None,
+        transcript: str = None
     ) -> dict:
         """
         Classify video content using OpenAI GPT-5-nano.
@@ -78,11 +80,24 @@ class LLMClassifier:
             username: Video author username
             category: Selected category name or "Custom"
             category_description: Description of desired content
+            video_url: Optional TikTok video URL for transcript fetching
+            transcript: Optional pre-fetched transcript
         
         Returns:
             dict with isMatch, category, confidence, reasoning
         """
         try:
+            # Try to get transcript if not provided
+            if not transcript and video_url:
+                try:
+                    from utils.transcript_fetcher import get_fetcher
+                    fetcher = get_fetcher()
+                    transcript = fetcher.get_transcript(video_url)
+                    if transcript:
+                        logger.info(f"Using transcript ({len(transcript)} chars)")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch transcript: {e}")
+            
             # Determine desired content description
             if category == "Custom":
                 desired_content = category_description
@@ -95,7 +110,7 @@ class LLMClassifier:
             # Try OpenAI classification
             try:
                 result = await self._classify_with_openai(
-                    image, caption, hashtags, username, desired_content, category
+                    image, caption, hashtags, username, desired_content, category, transcript
                 )
                 return result
             except Exception as e:
@@ -121,7 +136,8 @@ class LLMClassifier:
         hashtags: List[str],
         username: str,
         desired_content: str,
-        category: str
+        category: str,
+        transcript: str = None
     ) -> dict:
         """Classify using OpenAI GPT-5-nano"""
         
@@ -131,10 +147,13 @@ class LLMClassifier:
         # Build user prompt with metadata
         user_prompt = f"""Caption: {caption}
 Hashtags: {', '.join(hashtags) if hashtags else 'None'}
-Username: @{username}
-
-Analyze the image and text above. Does this video match what the user wants to see?
-Return JSON only (no other text)."""
+Username: @{username}"""
+        
+        # Add transcript if available
+        if transcript:
+            user_prompt += f"\nVideo Transcript: {transcript[:500]}"  # Limit to 500 chars to save tokens
+        
+        user_prompt += "\n\nAnalyze the image and text above. Does this video match what the user wants to see?\nReturn JSON only (no other text)."
         
         # Encode image to base64
         image_base64 = base64.b64encode(image).decode('utf-8')
