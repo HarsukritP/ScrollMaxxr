@@ -238,6 +238,12 @@ async function extractVideoData() {
     };
   } catch (error) {
     console.error('[ScrollMaxxr] Error extracting video data:', error);
+    
+    // Re-throw context invalidation errors so they're handled properly
+    if (error.message && error.message.includes('Extension context invalidated')) {
+      throw error;
+    }
+    
     return null;
   }
 }
