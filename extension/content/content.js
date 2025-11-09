@@ -53,6 +53,14 @@ async function processCurrentVideo() {
   if (!isCalibrating) return;
 
   try {
+    // Check if extension context is still valid
+    if (!isExtensionContextValid()) {
+      console.error('[ScrollMaxxr] Extension context invalidated - please reload the page');
+      stopCalibration();
+      alert('ScrollMaxxr extension was reloaded. Please refresh this page to continue.');
+      return;
+    }
+
     // Wait a bit for video to load
     await sleep(1000);
 
@@ -72,8 +80,25 @@ async function processCurrentVideo() {
     chrome.runtime.sendMessage(
       { action: 'classify', data: videoData },
       async (response) => {
-        if (chrome.runtime.lastError || response.error) {
-          console.error('[ScrollMaxxr] Classification error:', response?.error || chrome.runtime.lastError);
+        if (chrome.runtime.lastError) {
+          const errorMsg = chrome.runtime.lastError.message;
+          
+          // Check for context invalidation
+          if (errorMsg.includes('Extension context invalidated')) {
+            console.error('[ScrollMaxxr] Extension context invalidated - stopping calibration');
+            stopCalibration();
+            alert('ScrollMaxxr extension was reloaded. Please refresh this page to continue.');
+            return;
+          }
+          
+          console.error('[ScrollMaxxr] Classification error:', errorMsg);
+          await scrollToNextVideo();
+          setTimeout(processCurrentVideo, 1000);
+          return;
+        }
+
+        if (response.error) {
+          console.error('[ScrollMaxxr] Classification error:', response.error);
           await scrollToNextVideo();
           setTimeout(processCurrentVideo, 1000);
           return;
@@ -88,11 +113,16 @@ async function processCurrentVideo() {
         }
         stats.matchRate = stats.matchesFound / stats.videosProcessed;
 
-        // Send stats update to popup
-        chrome.runtime.sendMessage({
-          type: 'stats_update',
-          data: stats
-        });
+        // Send stats update to popup (with error handling)
+        try {
+          chrome.runtime.sendMessage({
+            type: 'stats_update',
+            data: stats
+          });
+        } catch (e) {
+          // Ignore errors sending stats (extension may have been reloaded)
+          console.warn('[ScrollMaxxr] Could not send stats update');
+        }
 
         // Execute action
         if (response.isMatch) {
@@ -115,6 +145,15 @@ async function processCurrentVideo() {
     );
   } catch (error) {
     console.error('[ScrollMaxxr] Error processing video:', error);
+    
+    // Check if it's a context invalidation error
+    if (error.message && error.message.includes('Extension context invalidated')) {
+      console.error('[ScrollMaxxr] Extension was reloaded - stopping');
+      stopCalibration();
+      alert('ScrollMaxxr extension was reloaded. Please refresh this page to continue.');
+      return;
+    }
+    
     await scrollToNextVideo();
     setTimeout(processCurrentVideo, 1000);
   }
@@ -206,6 +245,11 @@ async function extractVideoData() {
 // Request screenshot from background script (bypasses CORS)
 async function requestScreenshot() {
   try {
+    // Check if extension context is still valid
+    if (!isExtensionContextValid()) {
+      throw new Error('Extension context invalidated');
+    }
+
     // Get video element to determine crop area
     const video = document.querySelector('video');
     if (!video) {
@@ -236,8 +280,11 @@ async function requestScreenshot() {
         { action: 'captureScreenshot', cropData },
         (response) => {
           if (chrome.runtime.lastError) {
-            console.error('[ScrollMaxxr] Screenshot request failed:', chrome.runtime.lastError);
-            reject(chrome.runtime.lastError);
+            const errorMsg = chrome.runtime.lastError.message;
+            console.error('[ScrollMaxxr] Screenshot request failed:', errorMsg);
+            
+            // Reject with the error (will be caught by extractVideoData)
+            reject(new Error(errorMsg));
             return;
           }
 
@@ -253,7 +300,7 @@ async function requestScreenshot() {
     });
   } catch (error) {
     console.error('[ScrollMaxxr] Screenshot request error:', error);
-    return null;
+    throw error; // Re-throw to be caught by extractVideoData
   }
 }
 
@@ -345,6 +392,15 @@ function sleep(ms) {
 
 function randomDelay(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function isExtensionContextValid() {
+  try {
+    // Try to access chrome.runtime.id - will throw if context is invalid
+    return !!chrome.runtime?.id;
+  } catch (e) {
+    return false;
+  }
 }
 
 // Initialize
