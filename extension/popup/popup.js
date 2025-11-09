@@ -101,13 +101,12 @@ startBtn.addEventListener('click', async () => {
       return;
     }
     
-    // Check if on TikTok For You Page
-    const isOnFYP = tab.url.includes('tiktok.com/foryou') || 
-                   tab.url.includes('tiktok.com/en') ||
-                   tab.url.includes('tiktok.com/@');
+    // Check if on a valid TikTok video page (For You Page or profile video)
+    const isOnFYP = tab.url.includes('tiktok.com/foryou');
+    const isOnVideo = tab.url.includes('tiktok.com/@') && tab.url.includes('/video/');
     
-    if (!isOnFYP) {
-      showMessage('Please go to TikTok For You Page (scroll feed)', 'error');
+    if (!isOnFYP && !isOnVideo) {
+      showMessage('⚠️ Please navigate to: tiktok.com/foryou', 'error');
       resetUI();
       return;
     }
@@ -204,6 +203,35 @@ function showMessage(text, type) {
   }, 5000);
 }
 
+// Check current page on popup open
+async function checkPageStatus() {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const pageStatus = document.getElementById('page-status');
+    
+    if (!tab.url.includes('tiktok.com')) {
+      pageStatus.innerHTML = '❌ Not on TikTok - Please navigate to <strong>tiktok.com/foryou</strong>';
+      pageStatus.className = 'page-status status-error';
+      startBtn.disabled = true;
+    } else if (tab.url.includes('/foryou')) {
+      pageStatus.innerHTML = '✅ On For You Page - Ready to calibrate!';
+      pageStatus.className = 'page-status status-success';
+      startBtn.disabled = false;
+    } else if (tab.url.includes('/@') && tab.url.includes('/video/')) {
+      pageStatus.innerHTML = '✅ On TikTok video - Ready to calibrate!';
+      pageStatus.className = 'page-status status-success';
+      startBtn.disabled = false;
+    } else {
+      pageStatus.innerHTML = '⚠️ Please navigate to <strong>tiktok.com/foryou</strong> to start';
+      pageStatus.className = 'page-status status-warning';
+      startBtn.disabled = true;
+    }
+  } catch (error) {
+    console.error('Error checking page status:', error);
+  }
+}
+
 // Initialize
+checkPageStatus();
 console.log('ScrollMaxxr popup loaded');
 

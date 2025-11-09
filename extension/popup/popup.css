@@ -75,6 +75,41 @@ body {
   margin: 0;
 }
 
+/* Page Status Indicator */
+.page-status {
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  text-align: center;
+  margin-bottom: 16px;
+  display: none; /* Hidden by default, shown by JS */
+}
+
+.page-status strong {
+  font-weight: 600;
+}
+
+.page-status.status-success {
+  background: rgba(16, 185, 129, 0.1);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  color: var(--success);
+  display: block;
+}
+
+.page-status.status-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  color: var(--warning);
+  display: block;
+}
+
+.page-status.status-error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--error);
+  display: block;
+}
+
 /* Section Labels */
 .section-label {
   display: block;
