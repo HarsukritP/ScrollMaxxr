@@ -31,7 +31,9 @@ class CalibrationSession:
         self.user_agent = user_agent
         self.stats_callback = stats_callback
         
-        self.bot: TikTokBot = get_bot()
+        # Create a FRESH bot instance for this session (not singleton)
+        # This prevents browser reuse issues when starting multiple sessions
+        self.bot: TikTokBot = TikTokBot()
         self.classifier = get_classifier()
         self.is_running = False
         self.task: Optional[asyncio.Task] = None

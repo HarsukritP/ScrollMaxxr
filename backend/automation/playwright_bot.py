@@ -189,10 +189,15 @@ class TikTokBot:
             
             # CRITICAL: Click on the page and play the video to satisfy autoplay policies
             logger.info("Enabling autoplay by interacting with page...")
-            await self._ensure_video_playing()
+            try:
+                await self._ensure_video_playing()
+            except Exception as play_err:
+                logger.warning(f"Video play attempt failed: {play_err}")
+                # Don't fail session if video play fails, just continue
             
         except Exception as e:
             logger.error(f"Failed to navigate to FYP: {e}")
+            # Don't close browser on navigation error
             raise
     
     async def get_current_video_data(self) -> Optional[Dict]:
@@ -530,72 +535,86 @@ class TikTokBot:
             
             logger.info(f"Found like button for visible video: {like_button_info.get('ariaLabel')[:30]}...")
             
-            # Now click the button for the VISIBLE video's article
-            # We need to re-query using the same logic to ensure we click the right one
-            clicked = await self.page.evaluate("""
-                async () => {
-                    // Find the currently visible video
-                    const videos = Array.from(document.querySelectorAll('video'));
-                    let activeVideo = null;
-                    
-                    for (const vid of videos) {
-                        const rect = vid.getBoundingClientRect();
+            # Now we need to click using PLAYWRIGHT (not JavaScript) for proper events
+            # Find the visible video's article and get the like button element
+            articles = await self.page.query_selector_all('article')
+            like_button_element = None
+            
+            for article in articles:
+                # Check if this article has a video that's visible
+                has_visible_video = await article.evaluate("""
+                    (art) => {
+                        const video = art.querySelector('video');
+                        if (!video) return false;
+                        
+                        const rect = video.getBoundingClientRect();
                         const isInCenter = rect.top >= -100 && rect.top <= 300;
-                        if (isInCenter) {
-                            activeVideo = vid;
-                            break;
-                        }
+                        return isInCenter;
                     }
-                    
-                    if (!activeVideo && videos.length > 0) {
-                        activeVideo = videos[0];
-                    }
-                    
-                    if (!activeVideo) return { success: false, reason: 'No video' };
-                    
-                    // Find article container
-                    const article = activeVideo.closest('article');
-                    if (!article) return { success: false, reason: 'No article' };
-                    
-                    // Find like button WITHIN this article
-                    const likeButton = article.querySelector('button[aria-label^="Like video"]');
-                    if (!likeButton) return { success: false, reason: 'No like button in article' };
-                    
-                    // Get before state
-                    const span = likeButton.querySelector('span[data-e2e="like-icon"]');
-                    const colorBefore = span?.style.color || window.getComputedStyle(span).color;
-                    
-                    // Click it
-                    likeButton.click();
-                    
-                    // Wait for animation
-                    await new Promise(resolve => setTimeout(resolve, 2000));
-                    
-                    // Get after state
-                    const colorAfter = span?.style.color || window.getComputedStyle(span).color;
-                    const isLiked = colorAfter.includes('254') || colorAfter.includes('FE2C');
-                    
-                    return {
-                        success: true,
-                        colorBefore: colorBefore,
-                        colorAfter: colorAfter,
-                        isLiked: isLiked
-                    };
+                """)
+                
+                if has_visible_video:
+                    # This is the visible video's article, find its like button
+                    like_button_element = await article.query_selector('button[aria-label^="Like video"]')
+                    if like_button_element:
+                        logger.info("Found like button element in visible article")
+                        break
+            
+            if not like_button_element:
+                logger.error("❌ Could not find like button element for visible video")
+                return False
+            
+            # Get color before click
+            color_before = await like_button_element.evaluate("""
+                (btn) => {
+                    const span = btn.querySelector('span[data-e2e="like-icon"]');
+                    return span?.style.color || window.getComputedStyle(span).color;
                 }
             """)
             
-            if not clicked.get('success'):
-                logger.error(f"❌ Click failed: {clicked.get('reason')}")
-                return False
+            # Click using Playwright's NATIVE click (generates ALL proper mouse events)
+            logger.info(f"Clicking with Playwright native click (color before: {color_before})...")
+            await like_button_element.click(delay=150)  # 150ms click delay like a human
             
-            if clicked.get('isLiked'):
-                logger.info(f"✅ Video LIKED successfully!")
-                logger.info(f"   Color changed: {clicked.get('colorBefore')} → {clicked.get('colorAfter')}")
+            # Wait for TikTok's like animation and API call
+            await asyncio.sleep(2.5)
+            
+            # Check color after
+            color_after = await like_button_element.evaluate("""
+                (btn) => {
+                    const span = btn.querySelector('span[data-e2e="like-icon"]');
+                    return span?.style.color || window.getComputedStyle(span).color;
+                }
+            """)
+            
+            aria_after = await like_button_element.get_attribute('aria-label')
+            
+            # Verify like worked
+            is_liked = 'rgb(254, 44, 85)' in color_after or '254' in color_after.replace(' ', '')
+            
+            if is_liked:
+                logger.info(f"✅ Video LIKED successfully! ❤️")
+                logger.info(f"   Color: {color_before} → {color_after}")
+                logger.info(f"   Aria: {aria_after}")
             else:
-                logger.error(f"❌ Like failed - color didn't change to red")
-                logger.error(f"   Before: {clicked.get('colorBefore')}")
-                logger.error(f"   After: {clicked.get('colorAfter')}")
-                logger.error(f"   TikTok may be blocking likes from automated browsers")
+                logger.warning(f"⚠️ Like may have failed or is delayed")
+                logger.warning(f"   Color before: {color_before}")
+                logger.warning(f"   Color after: {color_after}")
+                logger.warning(f"   Expected: rgb(254, 44, 85)")
+                
+                # Wait extra time and check again
+                await asyncio.sleep(2.0)
+                color_final = await like_button_element.evaluate("""
+                    (btn) => {
+                        const span = btn.querySelector('span[data-e2e="like-icon"]');
+                        return span?.style.color || window.getComputedStyle(span).color;
+                    }
+                """)
+                
+                if 'rgb(254, 44, 85)' in color_final or '254' in color_final.replace(' ', ''):
+                    logger.info(f"✅ Like succeeded after delay! Color: {color_final}")
+                else:
+                    logger.error(f"❌ Like failed - final color: {color_final}")
             
             await asyncio.sleep(0.5)
             return True
@@ -644,7 +663,7 @@ class TikTokBot:
                 logger.info("✅ Scroll animation completed, video centered")
             except Exception as e:
                 logger.warning(f"Scroll animation timeout, continuing anyway: {e}")
-                await asyncio.sleep(1.0)  # Extra wait if detection failed
+                await asyncio.sleep(1.5)  # Extra wait if detection failed
             
             # CRITICAL: Ensure the video starts playing after scroll
             await self._ensure_video_playing()
@@ -899,7 +918,7 @@ class TikTokBot:
         - Retry with muted video if unmuted fails
         - Dismiss any error overlays
         """
-        if not self.page:
+        if not self.page or not self.is_running:
             return
         
         try:
