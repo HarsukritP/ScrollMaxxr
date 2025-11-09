@@ -183,42 +183,120 @@ async function extractVideoData() {
       return null;
     }
 
-    // Username - REQUIRED to identify video
-    const usernameEl = document.querySelector('[data-e2e="browse-username"]') ||
-                       document.querySelector('[data-e2e="video-author-uniqueid"]') ||
-                       document.querySelector('a[href^="/@"]');
-    const username = usernameEl?.textContent?.trim().replace('@', '') || '';
+    console.log('[ScrollMaxxr] 🔍 Debugging video data extraction...');
+
+    // USERNAME DETECTION - Try multiple methods
+    let username = '';
     
-    // Try to find video ID from various sources
-    let videoId = '';
-    
-    // Method 1: Try to find from link in current view
-    const videoLink = document.querySelector('a[href*="/video/"]');
-    if (videoLink) {
-      const match = videoLink.href.match(/\/video\/(\d+)/);
-      if (match) videoId = match[1];
+    // Method 1: Browse username
+    let usernameEl = document.querySelector('[data-e2e="browse-username"]');
+    if (usernameEl) {
+      username = usernameEl.textContent?.trim().replace('@', '') || '';
+      console.log('[ScrollMaxxr] Found username via browse-username:', username);
     }
     
-    // Method 2: Try from video element data attributes
+    // Method 2: Video author uniqueid
+    if (!username) {
+      usernameEl = document.querySelector('[data-e2e="video-author-uniqueid"]');
+      if (usernameEl) {
+        username = usernameEl.textContent?.trim().replace('@', '') || '';
+        console.log('[ScrollMaxxr] Found username via video-author-uniqueid:', username);
+      }
+    }
+    
+    // Method 3: Any link starting with /@
+    if (!username) {
+      usernameEl = document.querySelector('a[href^="/@"]');
+      if (usernameEl) {
+        const match = usernameEl.href.match(/@([^/?]+)/);
+        if (match) {
+          username = match[1];
+          console.log('[ScrollMaxxr] Found username via profile link:', username);
+        }
+      }
+    }
+    
+    // Method 4: Look for ANY links with /@
+    if (!username) {
+      const allLinks = Array.from(document.querySelectorAll('a[href*="/@"]'));
+      console.log('[ScrollMaxxr] Found', allLinks.length, 'links with /@');
+      if (allLinks.length > 0) {
+        const firstLink = allLinks[0];
+        const match = firstLink.href.match(/@([^/?]+)/);
+        if (match) {
+          username = match[1];
+          console.log('[ScrollMaxxr] Found username via any profile link:', username);
+        }
+      }
+    }
+    
+    if (!username) {
+      console.error('[ScrollMaxxr] ❌ Could not find username!');
+      console.log('[ScrollMaxxr] Available elements:', {
+        'data-e2e=browse-username': !!document.querySelector('[data-e2e="browse-username"]'),
+        'data-e2e=video-author-uniqueid': !!document.querySelector('[data-e2e="video-author-uniqueid"]'),
+        'links with /@': document.querySelectorAll('a[href*="/@"]').length
+      });
+      return null;
+    }
+    
+    // VIDEO ID DETECTION - Try multiple methods
+    let videoId = '';
+    
+    // Method 1: Current URL
+    const urlMatch = window.location.href.match(/\/video\/(\d+)/);
+    if (urlMatch) {
+      videoId = urlMatch[1];
+      console.log('[ScrollMaxxr] Found video ID from URL:', videoId);
+    }
+    
+    // Method 2: Try to find from link in current view
+    if (!videoId) {
+      const videoLink = document.querySelector('a[href*="/video/"]');
+      if (videoLink) {
+        const match = videoLink.href.match(/\/video\/(\d+)/);
+        if (match) {
+          videoId = match[1];
+          console.log('[ScrollMaxxr] Found video ID from video link:', videoId);
+        }
+      }
+    }
+    
+    // Method 3: Try from video element's parent container
     if (!videoId && video.closest('[data-e2e="recommend-list-item"]')) {
       const container = video.closest('[data-e2e="recommend-list-item"]');
       const link = container?.querySelector('a[href*="/video/"]');
       if (link) {
         const match = link.href.match(/\/video\/(\d+)/);
-        if (match) videoId = match[1];
+        if (match) {
+          videoId = match[1];
+          console.log('[ScrollMaxxr] Found video ID from container:', videoId);
+        }
       }
     }
     
-    // Construct proper video URL if we have both username and videoId
+    // Method 4: Look for ANY video links
+    if (!videoId) {
+      const allVideoLinks = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+      console.log('[ScrollMaxxr] Found', allVideoLinks.length, 'video links');
+      if (allVideoLinks.length > 0) {
+        const firstLink = allVideoLinks[0];
+        const match = firstLink.href.match(/\/video\/(\d+)/);
+        if (match) {
+          videoId = match[1];
+          console.log('[ScrollMaxxr] Found video ID from any video link:', videoId);
+        }
+      }
+    }
+    
+    // Construct proper video URL
     let videoUrl = window.location.href;
     if (username && videoId) {
       videoUrl = `https://www.tiktok.com/@${username}/video/${videoId}`;
-    }
-    
-    // If we still don't have a proper video identifier, skip
-    if (!username) {
-      console.log('[ScrollMaxxr] Cannot identify video (no username found)');
-      return null;
+      console.log('[ScrollMaxxr] ✅ Constructed video URL:', videoUrl);
+    } else {
+      console.warn('[ScrollMaxxr] ⚠️ Using current URL as fallback:', videoUrl);
+      console.log('[ScrollMaxxr] username:', username, 'videoId:', videoId);
     }
 
     // Caption
