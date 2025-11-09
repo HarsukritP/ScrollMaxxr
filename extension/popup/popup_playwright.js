@@ -93,21 +93,21 @@ startBtn.addEventListener('click', async () => {
   // Save category
   await chrome.storage.local.set({ selectedCategory: category });
 
-  // Check if user is logged into TikTok
+  // Check if user is logged into TikTok (just need cookies, don't need tab open)
   showMessage('🔍 Checking TikTok login...', 'info');
   
   try {
     const cookies = await chrome.cookies.getAll({ domain: '.tiktok.com' });
     
     if (cookies.length === 0) {
-      showMessage('⚠️ Please login to TikTok first!', 'error');
+      showMessage('⚠️ Please login to TikTok first (just visit tiktok.com and login)', 'error');
       return;
     }
     
     console.log('[Popup] Found', cookies.length, 'TikTok cookies');
     
     // Start Playwright session via background script
-    showMessage('🚀 Starting Playwright session...', 'info');
+    showMessage('🚀 Starting headless browser...', 'info');
     startBtn.disabled = true;
     
     const response = await chrome.runtime.sendMessage({
@@ -127,7 +127,7 @@ startBtn.addEventListener('click', async () => {
     
     // Update UI
     showUI('running');
-    showMessage('✅ Calibration started! Watch the stats update...', 'success');
+    showMessage('✅ Running in background! You can close TikTok now.', 'success');
     statusEl.textContent = 'Running ⚡';
     
     console.log('[Popup] Session started:', sessionId);

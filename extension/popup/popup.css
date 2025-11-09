@@ -75,6 +75,38 @@ body {
   margin: 0;
 }
 
+/* Info Box */
+.info-box {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(139, 92, 246, 0.08);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  border-radius: 8px;
+}
+
+.info-icon {
+  width: 18px;
+  height: 18px;
+  color: var(--accent-primary);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.info-box p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.info-box strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
 /* Page Status Indicator */
 .page-status {
   padding: 10px 12px;
