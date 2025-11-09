@@ -248,10 +248,15 @@ def create_session(
 
 
 async def stop_session(session_id: str):
-    """Stop and remove a session"""
+    """Stop and remove a session - always removes from registry even if stop fails"""
     session = _active_sessions.pop(session_id, None)
     if session:
-        await session.stop()
+        try:
+            await session.stop()
+        except Exception as e:
+            logger.error(f"Error stopping session {session_id}: {e}")
+            # Still remove from registry even if stop failed
+            pass
 
 
 def list_sessions() -> list:

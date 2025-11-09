@@ -166,6 +166,40 @@ async def list_active_sessions():
     }
 
 
+@router.post("/stop-all", response_model=dict)
+async def stop_all_sessions():
+    """
+    Force stop ALL active sessions (emergency cleanup)
+    
+    Returns:
+        Count of sessions stopped
+    """
+    try:
+        sessions = list_sessions()
+        count = len(sessions)
+        
+        logger.info(f"Force stopping {count} sessions...")
+        
+        for session_id in sessions:
+            try:
+                await stop_session(session_id)
+                logger.info(f"Stopped session {session_id}")
+            except Exception as e:
+                logger.error(f"Error stopping {session_id}: {e}")
+        
+        return {
+            "message": f"Stopped {count} sessions",
+            "count": count
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to stop all sessions: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to stop all sessions: {str(e)}"
+        )
+
+
 # WebSocket for real-time stats updates
 class ConnectionManager:
     """Manages WebSocket connections for each session"""
