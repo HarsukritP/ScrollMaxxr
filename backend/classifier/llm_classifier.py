@@ -192,8 +192,7 @@ Username: @{username}"""
                     ]
                 }
             ],
-            max_completion_tokens=300,  # GPT-5-nano uses max_completion_tokens instead of max_tokens
-            temperature=0.3  # Lower temperature for more consistent results
+            max_completion_tokens=300  # GPT-5-nano uses max_completion_tokens, default temperature only
         )
         
         logger.info("OpenAI response received")

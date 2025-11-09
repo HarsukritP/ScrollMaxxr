@@ -26,6 +26,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   return true; // Keep message channel open for async response
 });
 
+// Video change monitoring
+let lastProcessedVideoId = null;
+let videoChangeCheckInterval = null;
+
 // Start calibration
 function startCalibration(category, description) {
   isCalibrating = true;
@@ -48,7 +52,10 @@ function startCalibration(category, description) {
   // Make TikTok tab active and focused (so user can see it working)
   chrome.runtime.sendMessage({ action: 'focusTab' });
   
-  // Start processing current video
+  // Start monitoring for video changes (for auto-detection after scroll)
+  startVideoChangeMonitor();
+  
+  // Process first video
   processCurrentVideo();
 }
 
@@ -58,8 +65,94 @@ function stopCalibration() {
   stats.status = 'Stopped';
   console.log('[ScrollMaxxr] Calibration stopped');
   
+  // Stop video change monitor
+  stopVideoChangeMonitor();
+  
   // Clear saved state
   chrome.storage.local.remove(['isCalibrating', 'selectedCategory', 'categoryDescription', 'stats']);
+}
+
+// Get current video ID from DOM
+function getCurrentVideoId() {
+  try {
+    const videos = Array.from(document.querySelectorAll('video'));
+    let activeVideo = null;
+    
+    for (const vid of videos) {
+      const rect = vid.getBoundingClientRect();
+      const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5;
+      const isPlaying = !vid.paused;
+      
+      if (isVisible || isPlaying) {
+        activeVideo = vid;
+        break;
+      }
+    }
+    
+    if (!activeVideo && videos.length > 0) {
+      activeVideo = videos[0];
+    }
+    
+    if (!activeVideo) return null;
+    
+    const container = activeVideo.closest('[data-e2e="recommend-list-item"]') || 
+                     activeVideo.closest('div[class*="DivVideoContainer"]') ||
+                     activeVideo.closest('div[class*="ItemContainer"]');
+    
+    if (container) {
+      const link = container.querySelector('a[href*="/video/"]');
+      if (link) {
+        const match = link.href.match(/\/video\/(\d+)/);
+        return match ? match[1] : null;
+      }
+    }
+    
+    const allLinks = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+    for (const link of allLinks) {
+      const rect = link.getBoundingClientRect();
+      if (rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5) {
+        const match = link.href.match(/\/video\/(\d+)/);
+        if (match) return match[1];
+      }
+    }
+    
+    return null;
+  } catch (error) {
+    return null;
+  }
+}
+
+// Start monitoring for video changes
+function startVideoChangeMonitor() {
+  console.log('[ScrollMaxxr] 🔄 Starting video change monitor');
+  
+  lastProcessedVideoId = getCurrentVideoId();
+  console.log('[ScrollMaxxr] Initial video ID:', lastProcessedVideoId);
+  
+  videoChangeCheckInterval = setInterval(() => {
+    if (!isCalibrating) {
+      stopVideoChangeMonitor();
+      return;
+    }
+    
+    const currentVideoId = getCurrentVideoId();
+    if (currentVideoId && currentVideoId !== lastProcessedVideoId) {
+      console.log('[ScrollMaxxr] 🎉 New video detected! (', lastProcessedVideoId, '→', currentVideoId, ')');
+      lastProcessedVideoId = currentVideoId;
+      
+      // Process the new video after a short delay
+      setTimeout(processCurrentVideo, 1500);
+    }
+  }, 500);
+}
+
+// Stop video change monitor
+function stopVideoChangeMonitor() {
+  if (videoChangeCheckInterval) {
+    clearInterval(videoChangeCheckInterval);
+    videoChangeCheckInterval = null;
+    console.log('[ScrollMaxxr] ⏹️ Stopped video change monitor');
+  }
 }
 
 // Process current video
@@ -450,65 +543,12 @@ async function likeVideo() {
   }
 }
 
-// Scroll to next video
+// Scroll to next video (video change monitor will detect the new video)
 async function scrollToNextVideo() {
   try {
-    console.log('[ScrollMaxxr] Attempting to scroll to next video...');
+    console.log('[ScrollMaxxr] 📜 Scrolling to next video...');
     
-    // Get current VISIBLE/PLAYING video ID
-    const getCurrentVideoId = () => {
-      // Find the active video
-      const videos = Array.from(document.querySelectorAll('video'));
-      let activeVideo = null;
-      
-      for (const vid of videos) {
-        const rect = vid.getBoundingClientRect();
-        const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5;
-        const isPlaying = !vid.paused;
-        
-        if (isVisible || isPlaying) {
-          activeVideo = vid;
-          break;
-        }
-      }
-      
-      if (!activeVideo && videos.length > 0) {
-        activeVideo = videos[0];
-      }
-      
-      if (!activeVideo) return null;
-      
-      // Find its container and video link
-      const container = activeVideo.closest('[data-e2e="recommend-list-item"]') ||
-                       activeVideo.closest('div[class*="DivVideoContainer"]') ||
-                       activeVideo.closest('div[class*="ItemContainer"]');
-      
-      if (container) {
-        const link = container.querySelector('a[href*="/video/"]');
-        if (link) {
-          const match = link.href.match(/\/video\/(\d+)/);
-          return match ? match[1] : null;
-        }
-      }
-      
-      // Fallback: find visible link
-      const allLinks = Array.from(document.querySelectorAll('a[href*="/video/"]'));
-      for (const link of allLinks) {
-        const rect = link.getBoundingClientRect();
-        if (rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5) {
-          const match = link.href.match(/\/video\/(\d+)/);
-          if (match) return match[1];
-        }
-      }
-      
-      return null;
-    };
-    
-    const currentVideoId = getCurrentVideoId();
-    console.log('[ScrollMaxxr] Current video ID before scroll:', currentVideoId);
-    
-    // Method 1: Simulate physical Arrow Down key (most reliable for TikTok)
-    console.log('[ScrollMaxxr] Simulating Arrow Down key...');
+    // Method 1: Arrow Down (most reliable for TikTok)
     document.dispatchEvent(new KeyboardEvent('keydown', {
       key: 'ArrowDown',
       code: 'ArrowDown',
@@ -518,48 +558,25 @@ async function scrollToNextVideo() {
       cancelable: true
     }));
     
-    // Wait for video to change
-    await sleep(randomDelay(2000, 3000));
+    // Small delay, then try wheel event as backup
+    await sleep(500);
     
-    // Check if video changed
-    const newVideoId = getCurrentVideoId();
-    if (newVideoId && newVideoId !== currentVideoId) {
-      console.log('[ScrollMaxxr] ✅ Successfully navigated to next video (ID changed:', currentVideoId, '→', newVideoId, ')');
-      return;
-    }
-    
-    // Method 2: Try mousewheel scroll
-    console.log('[ScrollMaxxr] Trying mousewheel scroll...');
+    // Method 2: Wheel event
     window.dispatchEvent(new WheelEvent('wheel', {
       deltaY: window.innerHeight,
       bubbles: true,
       cancelable: true
     }));
     
-    await sleep(randomDelay(2000, 3000));
-    
-    const videoIdAfterWheel = getCurrentVideoId();
-    if (videoIdAfterWheel && videoIdAfterWheel !== currentVideoId) {
-      console.log('[ScrollMaxxr] ✅ Mousewheel worked - navigated to next video (ID changed:', currentVideoId, '→', videoIdAfterWheel, ')');
-      return;
-    }
-    
-    // Method 3: Aggressive scroll
-    console.log('[ScrollMaxxr] Trying aggressive scroll...');
+    // Method 3: Direct scroll as last resort
+    await sleep(500);
     window.scrollBy({
-      top: window.innerHeight * 1.5,
+      top: window.innerHeight,
       behavior: 'smooth'
     });
     
-    await sleep(randomDelay(2000, 3000));
-    
-    const finalVideoId = getCurrentVideoId();
-    if (finalVideoId && finalVideoId !== currentVideoId) {
-      console.log('[ScrollMaxxr] ✅ Scroll worked - navigated to next video (ID changed:', currentVideoId, '→', finalVideoId, ')');
-    } else {
-      console.warn('[ScrollMaxxr] ⚠️ All scroll methods failed - video ID unchanged:', currentVideoId);
-      console.log('[ScrollMaxxr] This might mean TikTok has anti-automation measures. Try manually scrolling once to "activate" the page.');
-    }
+    console.log('[ScrollMaxxr] Scroll triggered, video change monitor will detect new video');
+    // The video change monitor will automatically process the new video when detected
   } catch (error) {
     console.error('[ScrollMaxxr] Error scrolling:', error);
   }
@@ -626,8 +643,9 @@ chrome.storage.local.get(['isCalibrating', 'selectedCategory', 'categoryDescript
     categoryDescription = result.categoryDescription;
     stats = result.stats || { videosProcessed: 0, matchesFound: 0, matchRate: 0, status: 'Running' };
     
-    // Resume calibration
+    // Resume calibration with video monitor
     console.log('[ScrollMaxxr] Resuming calibration for:', selectedCategory);
+    startVideoChangeMonitor();
     setTimeout(processCurrentVideo, 2000); // Wait for page to load
   }
 });
