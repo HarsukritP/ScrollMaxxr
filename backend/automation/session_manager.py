@@ -179,8 +179,9 @@ class CalibrationSession:
                 logger.info("Scrolling to next video...")
                 await self.bot.scroll_to_next_video()
                 
-                # Wait for scroll to complete and new video to load (reduced for speed)
-                await asyncio.sleep(1.5)  # Reduced from 3s to 1.5s
+                # Wait for scroll animation to FULLY complete before processing next video
+                # This prevents liking the wrong video during scroll transitions
+                await asyncio.sleep(2.5)  # Increased to ensure page is stable
                 
                 # Check completion
                 stats = self.bot.get_stats()
