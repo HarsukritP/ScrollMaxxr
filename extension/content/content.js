@@ -176,39 +176,86 @@ async function processCurrentVideo() {
 // Extract video data
 async function extractVideoData() {
   try {
-    // First, check if there's a video element
-    const video = document.querySelector('video');
-    if (!video) {
-      console.log('[ScrollMaxxr] No video element found');
-      return null;
-    }
-
     console.log('[ScrollMaxxr] 🔍 Debugging video data extraction...');
-
-    // USERNAME DETECTION - Try multiple methods
-    let username = '';
     
-    // Method 1: Browse username
-    let usernameEl = document.querySelector('[data-e2e="browse-username"]');
-    if (usernameEl) {
-      username = usernameEl.textContent?.trim().replace('@', '') || '';
-      console.log('[ScrollMaxxr] Found username via browse-username:', username);
-    }
+    // Find the CURRENTLY PLAYING video (not just any video in DOM)
+    // TikTok loads multiple videos, so we need to find the visible one
+    const videos = Array.from(document.querySelectorAll('video'));
+    console.log('[ScrollMaxxr] Found', videos.length, 'video elements in DOM');
     
-    // Method 2: Video author uniqueid
-    if (!username) {
-      usernameEl = document.querySelector('[data-e2e="video-author-uniqueid"]');
-      if (usernameEl) {
-        username = usernameEl.textContent?.trim().replace('@', '') || '';
-        console.log('[ScrollMaxxr] Found username via video-author-uniqueid:', username);
+    // Find the video that's actually playing/visible
+    let activeVideo = null;
+    for (const vid of videos) {
+      const rect = vid.getBoundingClientRect();
+      const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5;
+      const isPlaying = !vid.paused;
+      
+      if (isVisible || isPlaying) {
+        activeVideo = vid;
+        console.log('[ScrollMaxxr] Found active video:', {
+          isVisible,
+          isPlaying,
+          top: rect.top,
+          bottom: rect.bottom
+        });
+        break;
       }
     }
     
-    // Method 3: Any link starting with /@
-    if (!username) {
-      usernameEl = document.querySelector('a[href^="/@"]');
+    if (!activeVideo && videos.length > 0) {
+      // Fallback: use the first video
+      activeVideo = videos[0];
+      console.log('[ScrollMaxxr] Using first video as fallback');
+    }
+    
+    if (!activeVideo) {
+      console.log('[ScrollMaxxr] No video element found');
+      return null;
+    }
+    
+    // Find the container for this specific video
+    const videoContainer = activeVideo.closest('[data-e2e="recommend-list-item"]') || 
+                          activeVideo.closest('div[class*="DivVideoContainer"]') ||
+                          activeVideo.closest('div[class*="ItemContainer"]');
+    
+    console.log('[ScrollMaxxr] Video container found:', !!videoContainer);
+
+    // USERNAME DETECTION - Look within the active video's container first
+    let username = '';
+    let usernameEl = null;
+    
+    if (videoContainer) {
+      // Method 1: Within container - browse username
+      usernameEl = videoContainer.querySelector('[data-e2e="browse-username"]') ||
+                   videoContainer.querySelector('[data-e2e="video-author-uniqueid"]') ||
+                   videoContainer.querySelector('a[href^="/@"]');
+      
       if (usernameEl) {
-        const match = usernameEl.href.match(/@([^/?]+)/);
+        if (usernameEl.tagName === 'A') {
+          const match = usernameEl.href.match(/@([^/?]+)/);
+          if (match) username = match[1];
+        } else {
+          username = usernameEl.textContent?.trim().replace('@', '') || '';
+        }
+        console.log('[ScrollMaxxr] Found username from active video container:', username);
+      }
+    }
+    
+    // Method 2: Fallback to global search
+    if (!username) {
+      usernameEl = document.querySelector('[data-e2e="browse-username"]') ||
+                   document.querySelector('[data-e2e="video-author-uniqueid"]');
+      if (usernameEl) {
+        username = usernameEl.textContent?.trim().replace('@', '') || '';
+        console.log('[ScrollMaxxr] Found username via global search:', username);
+      }
+    }
+    
+    // Method 3: Any profile link
+    if (!username) {
+      const profileLinks = Array.from(document.querySelectorAll('a[href*="/@"]'));
+      if (profileLinks.length > 0) {
+        const match = profileLinks[0].href.match(/@([^/?]+)/);
         if (match) {
           username = match[1];
           console.log('[ScrollMaxxr] Found username via profile link:', username);
@@ -216,75 +263,47 @@ async function extractVideoData() {
       }
     }
     
-    // Method 4: Look for ANY links with /@
-    if (!username) {
-      const allLinks = Array.from(document.querySelectorAll('a[href*="/@"]'));
-      console.log('[ScrollMaxxr] Found', allLinks.length, 'links with /@');
-      if (allLinks.length > 0) {
-        const firstLink = allLinks[0];
-        const match = firstLink.href.match(/@([^/?]+)/);
-        if (match) {
-          username = match[1];
-          console.log('[ScrollMaxxr] Found username via any profile link:', username);
-        }
-      }
-    }
-    
     if (!username) {
       console.error('[ScrollMaxxr] ❌ Could not find username!');
-      console.log('[ScrollMaxxr] Available elements:', {
-        'data-e2e=browse-username': !!document.querySelector('[data-e2e="browse-username"]'),
-        'data-e2e=video-author-uniqueid': !!document.querySelector('[data-e2e="video-author-uniqueid"]'),
-        'links with /@': document.querySelectorAll('a[href*="/@"]').length
-      });
       return null;
     }
     
-    // VIDEO ID DETECTION - Try multiple methods
+    // VIDEO ID DETECTION - Look within the active video's container
     let videoId = '';
     
-    // Method 1: Current URL
-    const urlMatch = window.location.href.match(/\/video\/(\d+)/);
-    if (urlMatch) {
-      videoId = urlMatch[1];
-      console.log('[ScrollMaxxr] Found video ID from URL:', videoId);
+    if (videoContainer) {
+      // Method 1: From container's video link
+      const containerLink = videoContainer.querySelector('a[href*="/video/"]');
+      if (containerLink) {
+        const match = containerLink.href.match(/\/video\/(\d+)/);
+        if (match) {
+          videoId = match[1];
+          console.log('[ScrollMaxxr] Found video ID from active container:', videoId);
+        }
+      }
     }
     
-    // Method 2: Try to find from link in current view
+    // Method 2: Current URL (if on a specific video page)
     if (!videoId) {
-      const videoLink = document.querySelector('a[href*="/video/"]');
-      if (videoLink) {
-        const match = videoLink.href.match(/\/video\/(\d+)/);
-        if (match) {
-          videoId = match[1];
-          console.log('[ScrollMaxxr] Found video ID from video link:', videoId);
-        }
+      const urlMatch = window.location.href.match(/\/video\/(\d+)/);
+      if (urlMatch) {
+        videoId = urlMatch[1];
+        console.log('[ScrollMaxxr] Found video ID from URL:', videoId);
       }
     }
     
-    // Method 3: Try from video element's parent container
-    if (!videoId && video.closest('[data-e2e="recommend-list-item"]')) {
-      const container = video.closest('[data-e2e="recommend-list-item"]');
-      const link = container?.querySelector('a[href*="/video/"]');
-      if (link) {
-        const match = link.href.match(/\/video\/(\d+)/);
-        if (match) {
-          videoId = match[1];
-          console.log('[ScrollMaxxr] Found video ID from container:', videoId);
-        }
-      }
-    }
-    
-    // Method 4: Look for ANY video links
+    // Method 3: Find closest visible video link
     if (!videoId) {
       const allVideoLinks = Array.from(document.querySelectorAll('a[href*="/video/"]'));
-      console.log('[ScrollMaxxr] Found', allVideoLinks.length, 'video links');
-      if (allVideoLinks.length > 0) {
-        const firstLink = allVideoLinks[0];
-        const match = firstLink.href.match(/\/video\/(\d+)/);
-        if (match) {
-          videoId = match[1];
-          console.log('[ScrollMaxxr] Found video ID from any video link:', videoId);
+      for (const link of allVideoLinks) {
+        const rect = link.getBoundingClientRect();
+        if (rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5) {
+          const match = link.href.match(/\/video\/(\d+)/);
+          if (match) {
+            videoId = match[1];
+            console.log('[ScrollMaxxr] Found video ID from visible link:', videoId);
+            break;
+          }
         }
       }
     }
@@ -436,18 +455,57 @@ async function scrollToNextVideo() {
   try {
     console.log('[ScrollMaxxr] Attempting to scroll to next video...');
     
-    // Get current video ID to verify we actually moved
+    // Get current VISIBLE/PLAYING video ID
     const getCurrentVideoId = () => {
-      const link = document.querySelector('a[href*="/video/"]');
-      if (link) {
-        const match = link.href.match(/\/video\/(\d+)/);
-        return match ? match[1] : null;
+      // Find the active video
+      const videos = Array.from(document.querySelectorAll('video'));
+      let activeVideo = null;
+      
+      for (const vid of videos) {
+        const rect = vid.getBoundingClientRect();
+        const isVisible = rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5;
+        const isPlaying = !vid.paused;
+        
+        if (isVisible || isPlaying) {
+          activeVideo = vid;
+          break;
+        }
       }
+      
+      if (!activeVideo && videos.length > 0) {
+        activeVideo = videos[0];
+      }
+      
+      if (!activeVideo) return null;
+      
+      // Find its container and video link
+      const container = activeVideo.closest('[data-e2e="recommend-list-item"]') ||
+                       activeVideo.closest('div[class*="DivVideoContainer"]') ||
+                       activeVideo.closest('div[class*="ItemContainer"]');
+      
+      if (container) {
+        const link = container.querySelector('a[href*="/video/"]');
+        if (link) {
+          const match = link.href.match(/\/video\/(\d+)/);
+          return match ? match[1] : null;
+        }
+      }
+      
+      // Fallback: find visible link
+      const allLinks = Array.from(document.querySelectorAll('a[href*="/video/"]'));
+      for (const link of allLinks) {
+        const rect = link.getBoundingClientRect();
+        if (rect.top >= 0 && rect.bottom <= window.innerHeight * 1.5) {
+          const match = link.href.match(/\/video\/(\d+)/);
+          if (match) return match[1];
+        }
+      }
+      
       return null;
     };
     
     const currentVideoId = getCurrentVideoId();
-    console.log('[ScrollMaxxr] Current video ID:', currentVideoId);
+    console.log('[ScrollMaxxr] Current video ID before scroll:', currentVideoId);
     
     // Method 1: Simulate physical Arrow Down key (most reliable for TikTok)
     console.log('[ScrollMaxxr] Simulating Arrow Down key...');
