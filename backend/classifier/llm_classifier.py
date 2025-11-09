@@ -285,3 +285,15 @@ Username: @{username}"""
         logger.info(f"Rule-based result: {result}")
         
         return result
+
+
+# Global classifier instance
+_classifier_instance = None
+
+
+def get_classifier() -> LLMClassifier:
+    """Get or create the global classifier instance (singleton pattern)"""
+    global _classifier_instance
+    if _classifier_instance is None:
+        _classifier_instance = LLMClassifier()
+    return _classifier_instance
