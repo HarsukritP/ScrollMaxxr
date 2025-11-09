@@ -96,7 +96,18 @@ startBtn.addEventListener('click', async () => {
     
     // Check if on TikTok
     if (!tab.url.includes('tiktok.com')) {
-      showMessage('Please open TikTok first', 'error');
+      showMessage('Please open TikTok.com first', 'error');
+      resetUI();
+      return;
+    }
+    
+    // Check if on TikTok For You Page
+    const isOnFYP = tab.url.includes('tiktok.com/foryou') || 
+                   tab.url.includes('tiktok.com/en') ||
+                   tab.url.includes('tiktok.com/@');
+    
+    if (!isOnFYP) {
+      showMessage('Please go to TikTok For You Page (scroll feed)', 'error');
       resetUI();
       return;
     }

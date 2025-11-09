@@ -87,16 +87,17 @@ class LLMClassifier:
             dict with isMatch, category, confidence, reasoning
         """
         try:
-            # Try to get transcript if not provided
-            if not transcript and video_url:
-                try:
-                    from utils.transcript_fetcher import get_fetcher
-                    fetcher = get_fetcher()
-                    transcript = fetcher.get_transcript(video_url)
-                    if transcript:
-                        logger.info(f"Using transcript ({len(transcript)} chars)")
-                except Exception as e:
-                    logger.warning(f"Failed to fetch transcript: {e}")
+            # DISABLED: Transcript fetching to avoid API quota issues
+            # Uncomment when RapidAPI quota is available
+            # if not transcript and video_url:
+            #     try:
+            #         from utils.transcript_fetcher import get_fetcher
+            #         fetcher = get_fetcher()
+            #         transcript = fetcher.get_transcript(video_url)
+            #         if transcript:
+            #             logger.info(f"Using transcript ({len(transcript)} chars)")
+            #     except Exception as e:
+            #         logger.warning(f"Failed to fetch transcript: {e}")
             
             # Determine desired content description
             if category == "Custom":
@@ -185,7 +186,7 @@ Username: @{username}"""
                     ]
                 }
             ],
-            max_tokens=300,
+            max_completion_tokens=300,  # GPT-5-nano uses max_completion_tokens instead of max_tokens
             temperature=0.3  # Lower temperature for more consistent results
         )
         

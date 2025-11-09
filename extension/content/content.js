@@ -123,6 +123,51 @@ async function processCurrentVideo() {
 // Extract video data
 async function extractVideoData() {
   try {
+    // First, check if there's a video element
+    const video = document.querySelector('video');
+    if (!video) {
+      console.log('[ScrollMaxxr] No video element found');
+      return null;
+    }
+
+    // Username - REQUIRED to identify video
+    const usernameEl = document.querySelector('[data-e2e="browse-username"]') ||
+                       document.querySelector('[data-e2e="video-author-uniqueid"]') ||
+                       document.querySelector('a[href^="/@"]');
+    const username = usernameEl?.textContent?.trim().replace('@', '') || '';
+    
+    // Try to find video ID from various sources
+    let videoId = '';
+    
+    // Method 1: Try to find from link in current view
+    const videoLink = document.querySelector('a[href*="/video/"]');
+    if (videoLink) {
+      const match = videoLink.href.match(/\/video\/(\d+)/);
+      if (match) videoId = match[1];
+    }
+    
+    // Method 2: Try from video element data attributes
+    if (!videoId && video.closest('[data-e2e="recommend-list-item"]')) {
+      const container = video.closest('[data-e2e="recommend-list-item"]');
+      const link = container?.querySelector('a[href*="/video/"]');
+      if (link) {
+        const match = link.href.match(/\/video\/(\d+)/);
+        if (match) videoId = match[1];
+      }
+    }
+    
+    // Construct proper video URL if we have both username and videoId
+    let videoUrl = window.location.href;
+    if (username && videoId) {
+      videoUrl = `https://www.tiktok.com/@${username}/video/${videoId}`;
+    }
+    
+    // If we still don't have a proper video identifier, skip
+    if (!username) {
+      console.log('[ScrollMaxxr] Cannot identify video (no username found)');
+      return null;
+    }
+
     // Caption
     const captionEl = document.querySelector('[data-e2e="browse-video-desc"]') ||
                       document.querySelector('[data-e2e="video-desc"]') ||
@@ -134,15 +179,6 @@ async function extractVideoData() {
     const hashtags = Array.from(hashtagEls).map(el => 
       el.textContent.replace('#', '').trim()
     ).filter(Boolean);
-
-    // Username
-    const usernameEl = document.querySelector('[data-e2e="browse-username"]') ||
-                       document.querySelector('[data-e2e="video-author-uniqueid"]') ||
-                       document.querySelector('a[href^="/@"]');
-    const username = usernameEl?.textContent?.trim().replace('@', '') || 'unknown';
-
-    // Video URL
-    const videoUrl = window.location.href;
 
     // Capture screenshot
     const screenshot = await captureScreenshot();
