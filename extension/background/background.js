@@ -140,16 +140,28 @@ async function startPlaywrightSession({ category, categoryDescription }) {
     console.log('[ScrollMaxxr BG] Extracted', cookies.length, 'cookies');
     
     // Convert to Playwright format
-    const playwrightCookies = cookies.map(cookie => ({
-      name: cookie.name,
-      value: cookie.value,
-      domain: cookie.domain,
-      path: cookie.path,
-      expires: cookie.expirationDate || -1,
-      httpOnly: cookie.httpOnly || false,
-      secure: cookie.secure || false,
-      sameSite: cookie.sameSite || 'Lax'
-    }));
+    const playwrightCookies = cookies.map(cookie => {
+      // Map Chrome sameSite to Playwright sameSite
+      let sameSite = 'Lax'; // default
+      if (cookie.sameSite === 'no_restriction') {
+        sameSite = 'None';
+      } else if (cookie.sameSite === 'lax') {
+        sameSite = 'Lax';
+      } else if (cookie.sameSite === 'strict') {
+        sameSite = 'Strict';
+      }
+      
+      return {
+        name: cookie.name,
+        value: cookie.value,
+        domain: cookie.domain,
+        path: cookie.path,
+        expires: cookie.expirationDate || -1,
+        httpOnly: cookie.httpOnly || false,
+        secure: cookie.secure || false,
+        sameSite: sameSite
+      };
+    });
     
     // Get user agent
     const userAgent = navigator.userAgent;
