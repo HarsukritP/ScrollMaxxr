@@ -180,11 +180,12 @@ async function extractVideoData() {
       el.textContent.replace('#', '').trim()
     ).filter(Boolean);
 
-    // Capture screenshot (optional - may fail due to CORS)
-    const screenshot = await captureScreenshot();
+    // Request screenshot from background script (has proper permissions)
+    const screenshot = await requestScreenshot();
     
     if (!screenshot) {
-      console.warn('[ScrollMaxxr] Screenshot capture failed (CORS restriction), using text-only classification');
+      console.error('[ScrollMaxxr] Failed to capture screenshot');
+      return null;
     }
 
     return {
@@ -192,7 +193,7 @@ async function extractVideoData() {
       hashtags,
       username,
       videoUrl,
-      screenshot: screenshot || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==', // 1x1 transparent placeholder
+      screenshot,
       category: selectedCategory,
       categoryDescription
     };
@@ -202,54 +203,56 @@ async function extractVideoData() {
   }
 }
 
-// Capture screenshot of current video
-async function captureScreenshot() {
+// Request screenshot from background script (bypasses CORS)
+async function requestScreenshot() {
   try {
+    // Get video element to determine crop area
     const video = document.querySelector('video');
     if (!video) {
-      console.warn('[ScrollMaxxr] No video element found for screenshot');
+      console.error('[ScrollMaxxr] No video element found');
       return null;
     }
 
-    // Wait for video to have loaded frames
+    // Wait for video to load
     if (video.readyState < 2) {
       console.log('[ScrollMaxxr] Waiting for video to load...');
       await sleep(1000);
-      
-      // If still not ready, skip screenshot
-      if (video.readyState < 2) {
-        console.warn('[ScrollMaxxr] Video not ready, skipping screenshot');
-        return null;
-      }
     }
 
-    // Create canvas
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.min(video.videoWidth || 720, 720);
-    canvas.height = Math.min(video.videoHeight || 1280, 1280);
+    // Get video position and dimensions for cropping
+    const rect = video.getBoundingClientRect();
+    const cropData = {
+      x: Math.round(rect.left),
+      y: Math.round(rect.top),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height)
+    };
 
-    // If video dimensions are invalid, skip
-    if (canvas.width === 0 || canvas.height === 0) {
-      console.warn('[ScrollMaxxr] Invalid video dimensions, skipping screenshot');
-      return null;
-    }
+    console.log('[ScrollMaxxr] Requesting screenshot from background script...');
 
-    // Draw video frame to canvas (this may fail due to CORS)
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    // Request screenshot from background script
+    return new Promise((resolve, reject) => {
+      chrome.runtime.sendMessage(
+        { action: 'captureScreenshot', cropData },
+        (response) => {
+          if (chrome.runtime.lastError) {
+            console.error('[ScrollMaxxr] Screenshot request failed:', chrome.runtime.lastError);
+            reject(chrome.runtime.lastError);
+            return;
+          }
 
-    // Convert to base64 JPEG (lower quality for faster upload)
-    const screenshot = canvas.toDataURL('image/jpeg', 0.6);
-    
-    console.log('[ScrollMaxxr] Screenshot captured successfully:', screenshot.length, 'bytes');
-    return screenshot;
+          if (response && response.screenshot) {
+            console.log('[ScrollMaxxr] Screenshot received:', response.screenshot.length, 'bytes');
+            resolve(response.screenshot);
+          } else {
+            console.error('[ScrollMaxxr] No screenshot in response');
+            reject(new Error('No screenshot data'));
+          }
+        }
+      );
+    });
   } catch (error) {
-    // CORS/Security error - this is expected for cross-origin videos
-    if (error.name === 'SecurityError' || error.message.includes('tainted')) {
-      console.warn('[ScrollMaxxr] Screenshot blocked by CORS policy (this is normal for TikTok videos)');
-    } else {
-      console.warn('[ScrollMaxxr] Screenshot capture failed:', error.message || error);
-    }
+    console.error('[ScrollMaxxr] Screenshot request error:', error);
     return null;
   }
 }

@@ -154,16 +154,16 @@ Username: @{username}"""
         if transcript:
             user_prompt += f"\nVideo Transcript: {transcript[:500]}"  # Limit to 500 chars to save tokens
         
-        # Check if we have meaningful text content
-        has_text_content = caption or hashtags or transcript
-        
-        if not has_text_content:
-            user_prompt += "\n\nNote: Limited metadata available. Analyze based on username and any visual cues in the screenshot."
-        
-        user_prompt += "\n\nAnalyze the available information. Does this video match what the user wants to see?\nReturn JSON only (no other text)."
+        user_prompt += "\n\nAnalyze the image and text above. Does this video match what the user wants to see?\nReturn JSON only (no other text)."
         
         # Encode image to base64
         image_base64 = base64.b64encode(image).decode('utf-8')
+        
+        # Validate we have real image data (not a tiny placeholder)
+        if len(image) < 1000:
+            logger.warning("Image data is suspiciously small, may be invalid")
+            # Fall back to text-only classification
+            return self._rule_based_classify(caption, hashtags, category, category_description)
         
         logger.info("Sending request to OpenAI GPT-5-nano...")
         
