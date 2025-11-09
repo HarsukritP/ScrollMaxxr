@@ -94,20 +94,20 @@ startBtn.addEventListener('click', async () => {
   await chrome.storage.local.set({ selectedCategory: category });
 
   // Check if user is logged into TikTok (just need cookies, don't need tab open)
-  showMessage('🔍 Checking TikTok login...', 'info');
+  showMessage('Checking TikTok login status...', 'info');
   
   try {
     const cookies = await chrome.cookies.getAll({ domain: '.tiktok.com' });
     
     if (cookies.length === 0) {
-      showMessage('⚠️ Please login to TikTok first (just visit tiktok.com and login)', 'error');
+      showMessage('Please login to TikTok first. Visit tiktok.com and login, then try again.', 'error');
       return;
     }
     
     console.log('[Popup] Found', cookies.length, 'TikTok cookies');
     
     // Start Playwright session via background script
-    showMessage('🚀 Starting headless browser...', 'info');
+    showMessage('Starting headless browser session...', 'info');
     startBtn.disabled = true;
     
     const response = await chrome.runtime.sendMessage({
@@ -127,14 +127,14 @@ startBtn.addEventListener('click', async () => {
     
     // Update UI
     showUI('running');
-    showMessage('✅ Running in background! You can close TikTok now.', 'success');
-    statusEl.textContent = 'Running ⚡';
+    showMessage('Session running in background. You can close TikTok now.', 'success');
+    statusEl.textContent = 'Running';
     
     console.log('[Popup] Session started:', sessionId);
     
   } catch (error) {
     console.error('[Popup] Failed to start session:', error);
-    showMessage(`❌ Failed to start: ${error.message}`, 'error');
+    showMessage(`Failed to start session: ${error.message}`, 'error');
     startBtn.disabled = false;
   }
 });
@@ -142,7 +142,7 @@ startBtn.addEventListener('click', async () => {
 // Stop Playwright session
 stopBtn.addEventListener('click', async () => {
   try {
-    showMessage('⏹️ Stopping session...', 'info');
+    showMessage('Stopping session...', 'info');
     stopBtn.disabled = true;
     
     const response = await chrome.runtime.sendMessage({
@@ -158,14 +158,14 @@ stopBtn.addEventListener('click', async () => {
     
     // Update UI
     showUI('idle');
-    showMessage('✅ Session stopped', 'success');
+    showMessage('Session stopped successfully.', 'success');
     statusEl.textContent = 'Stopped';
     
     console.log('[Popup] Session stopped');
     
   } catch (error) {
     console.error('[Popup] Failed to stop session:', error);
-    showMessage(`❌ Failed to stop: ${error.message}`, 'error');
+    showMessage(`Failed to stop session: ${error.message}`, 'error');
   } finally {
     stopBtn.disabled = false;
   }
@@ -190,7 +190,7 @@ function updateStats(stats) {
   
   // Update status
   const status = stats.stats?.status || stats.status || 'idle';
-  statusEl.textContent = status.charAt(0).toUpperCase() + status.slice(1) + ' ⚡';
+  statusEl.textContent = status.charAt(0).toUpperCase() + status.slice(1);
   
   // Update current video
   if (stats.stats?.currentVideo || stats.currentVideo) {
@@ -204,9 +204,8 @@ function updateStats(stats) {
     const { confidence, reasoning, isMatch } = stats.lastClassification;
     // Determine match based on confidence threshold (>= 0.5)
     const matchStatus = isMatch !== undefined ? isMatch : (confidence >= 0.5);
-    const emoji = matchStatus ? '✅' : '❌';
     const confPercent = Math.round(confidence * 100);
-    showMessage(`${emoji} ${matchStatus ? 'MATCH' : 'Skip'} (${confPercent}%): ${reasoning}`, 
+    showMessage(`${matchStatus ? 'MATCH' : 'SKIP'} (${confPercent}%): ${reasoning}`, 
                 matchStatus ? 'success' : 'info');
   }
 }
@@ -222,7 +221,7 @@ async function checkSessionStatus() {
       isRunning = true;
       sessionId = response.sessionId;
       showUI('running');
-      statusEl.textContent = 'Running ⚡';
+      statusEl.textContent = 'Running';
       console.log('[Popup] Resumed session:', sessionId);
     }
   } catch (error) {

@@ -124,7 +124,7 @@ function getCurrentVideoId() {
 
 // Start monitoring for video changes
 function startVideoChangeMonitor() {
-  console.log('[ScrollMaxxr] 🔄 Starting video change monitor');
+  console.log('[ScrollMaxxr] Starting video change monitor');
   
   lastProcessedVideoId = getCurrentVideoId();
   console.log('[ScrollMaxxr] Initial video ID:', lastProcessedVideoId);
@@ -137,7 +137,7 @@ function startVideoChangeMonitor() {
     
     const currentVideoId = getCurrentVideoId();
     if (currentVideoId && currentVideoId !== lastProcessedVideoId) {
-      console.log('[ScrollMaxxr] 🎉 New video detected! (', lastProcessedVideoId, '→', currentVideoId, ')');
+      console.log('[ScrollMaxxr] New video detected! (', lastProcessedVideoId, '->', currentVideoId, ')');
       lastProcessedVideoId = currentVideoId;
       
       // Process the new video after a short delay
@@ -151,7 +151,7 @@ function stopVideoChangeMonitor() {
   if (videoChangeCheckInterval) {
     clearInterval(videoChangeCheckInterval);
     videoChangeCheckInterval = null;
-    console.log('[ScrollMaxxr] ⏹️ Stopped video change monitor');
+    console.log('[ScrollMaxxr] Stopped video change monitor');
   }
 }
 
@@ -164,7 +164,7 @@ async function processCurrentVideo() {
     if (!isExtensionContextValid()) {
       console.error('[ScrollMaxxr] Extension context invalidated - please reload the page');
       stopCalibration();
-      alert('ScrollMaxxr extension was reloaded. Please refresh this page to continue.');
+      alert('ScrollMaxxr extension was reloaded. Please refresh the page to continue.');
       return;
     }
 
@@ -194,7 +194,7 @@ async function processCurrentVideo() {
           if (errorMsg.includes('Extension context invalidated')) {
             console.error('[ScrollMaxxr] Extension context invalidated - stopping calibration');
             stopCalibration();
-            alert('ScrollMaxxr extension was reloaded. Please refresh this page to continue.');
+            alert('ScrollMaxxr extension was reloaded. Please refresh the page to continue.');
             return;
           }
           
@@ -261,7 +261,7 @@ async function processCurrentVideo() {
     if (error.message && error.message.includes('Extension context invalidated')) {
       console.error('[ScrollMaxxr] Extension was reloaded - stopping');
       stopCalibration();
-      alert('ScrollMaxxr extension was reloaded. Please refresh this page to continue.');
+      alert('ScrollMaxxr extension was reloaded. Please refresh the page to continue.');
       return;
     }
     
@@ -273,7 +273,7 @@ async function processCurrentVideo() {
 // Extract video data
 async function extractVideoData() {
   try {
-    console.log('[ScrollMaxxr] 🔍 Debugging video data extraction...');
+    console.log('[ScrollMaxxr] Debugging video data extraction...');
     
     // Find the CURRENTLY PLAYING video (not just any video in DOM)
     // TikTok loads multiple videos, so we need to find the visible one
@@ -361,7 +361,7 @@ async function extractVideoData() {
     }
     
     if (!username) {
-      console.error('[ScrollMaxxr] ❌ Could not find username!');
+      console.error('[ScrollMaxxr] Could not find username');
       return null;
     }
     
@@ -409,9 +409,9 @@ async function extractVideoData() {
     let videoUrl = window.location.href;
     if (username && videoId) {
       videoUrl = `https://www.tiktok.com/@${username}/video/${videoId}`;
-      console.log('[ScrollMaxxr] ✅ Constructed video URL:', videoUrl);
+      console.log('[ScrollMaxxr] Constructed video URL:', videoUrl);
     } else {
-      console.warn('[ScrollMaxxr] ⚠️ Using current URL as fallback:', videoUrl);
+      console.warn('[ScrollMaxxr] Using current URL as fallback:', videoUrl);
       console.log('[ScrollMaxxr] username:', username, 'videoId:', videoId);
     }
 
@@ -550,7 +550,7 @@ async function likeVideo() {
 // Scroll to next video (video change monitor will detect the new video)
 async function scrollToNextVideo() {
   try {
-    console.log('[ScrollMaxxr] 📜 Scrolling to next video...');
+    console.log('[ScrollMaxxr] Scrolling to next video...');
     
     // Method 1: Arrow Down (most reliable for TikTok)
     document.dispatchEvent(new KeyboardEvent('keydown', {

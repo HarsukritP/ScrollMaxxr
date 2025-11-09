@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "ScrollMaxxr - FYP Calibrator",
+  "name": "ScrollMaxxr",
   "version": "1.0.0",
   "description": "AI-powered TikTok FYP optimization. Stop scrolling past content you hate.",
   "permissions": [

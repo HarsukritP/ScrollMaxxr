@@ -104,7 +104,7 @@ async function classifyVideo(videoData) {
     
     // Check if backend is running
     if (error.message.includes('Failed to fetch')) {
-      throw new Error('Backend not running. Please start the backend server at ' + BACKEND_URL);
+      throw new Error('Backend server not running. Please start the backend server at ' + BACKEND_URL);
     }
     
     throw error;
@@ -133,7 +133,7 @@ async function captureTabScreenshot(tabId, cropData) {
     
     // Check if it's a permission error
     if (error.message.includes('activeTab') || error.message.includes('permission')) {
-      throw new Error('Screenshot permission denied. The extension needs <all_urls> permission to capture screenshots continuously. Please reload the extension and approve the permission request.');
+      throw new Error('Screenshot permission denied. The extension requires all_urls permission to capture screenshots. Please reload the extension and approve the permission request.');
     }
     
     throw error;

@@ -909,7 +909,7 @@ class TikTokBot:
     
     async def _ensure_video_playing(self):
         """
-        Ensure video is playing by clicking on page and explicitly playing video.
+        Ensure video is playing by clicking on video element and explicitly playing video.
         This is critical for satisfying browser autoplay policies.
         
         Key fixes:
@@ -917,24 +917,46 @@ class TikTokBot:
         - Wait for video to be ready before playing
         - Retry with muted video if unmuted fails
         - Dismiss any error overlays
+        - Click on VIDEO element specifically to avoid hitting like buttons
         """
         if not self.page or not self.is_running:
             return
         
         try:
-            # Strategy 1: Click somewhere on the page to enable autoplay (satisfies user interaction requirement)
-            logger.info("Clicking on page to enable autoplay...")
+            # Strategy 1: Click on the VIDEO element specifically (not center of viewport)
+            # This avoids accidentally clicking like buttons during scroll transitions
+            logger.info("Clicking on video element to enable autoplay...")
             await self.page.evaluate("""
                 () => {
-                    // Click in the middle of the viewport
-                    const event = new MouseEvent('click', {
-                        view: window,
-                        bubbles: true,
-                        cancelable: true,
-                        clientX: window.innerWidth / 2,
-                        clientY: window.innerHeight / 2
-                    });
-                    document.body.dispatchEvent(event);
+                    // Find the active video
+                    const videos = Array.from(document.querySelectorAll('video'));
+                    let activeVideo = null;
+                    
+                    for (const vid of videos) {
+                        const rect = vid.getBoundingClientRect();
+                        const isVisible = rect.top >= -200 && rect.bottom <= window.innerHeight + 200;
+                        if (isVisible) {
+                            activeVideo = vid;
+                            break;
+                        }
+                    }
+                    
+                    if (!activeVideo && videos.length > 0) {
+                        activeVideo = videos[0];
+                    }
+                    
+                    if (activeVideo) {
+                        // Click directly on the video element (not on buttons)
+                        const rect = activeVideo.getBoundingClientRect();
+                        const event = new MouseEvent('click', {
+                            view: window,
+                            bubbles: true,
+                            cancelable: true,
+                            clientX: rect.left + rect.width / 2,
+                            clientY: rect.top + rect.height / 2
+                        });
+                        activeVideo.dispatchEvent(event);
+                    }
                 }
             """)
             await asyncio.sleep(0.3)

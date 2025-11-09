@@ -162,7 +162,9 @@ class CalibrationSession:
                 if is_match:
                     logger.info(f"✅ MATCH! (confidence {confidence:.2f} >= {CONFIDENCE_THRESHOLD}) Liking video...")
                     await self.bot.like_video()
-                    await asyncio.sleep(1)  # Short delay after liking
+                    # Extended delay after liking to ensure like state is committed before scrolling
+                    # This prevents any race conditions with scroll interactions
+                    await asyncio.sleep(2)  # Increased from 1s to 2s
                 else:
                     logger.info(f"❌ No match (confidence {confidence:.2f} < {CONFIDENCE_THRESHOLD}), skipping...")
                 
@@ -177,13 +179,13 @@ class CalibrationSession:
                     }
                     await self.stats_callback(stats)
                 
-                # Scroll to next video (after classification is done)
+                # Scroll to next video (after classification is done and like is committed)
                 logger.info("Scrolling to next video...")
                 await self.bot.scroll_to_next_video()
                 
                 # Wait for scroll animation to FULLY complete before processing next video
-                # This prevents liking the wrong video during scroll transitions
-                await asyncio.sleep(2.5)  # Increased to ensure page is stable
+                # This prevents interacting with wrong video during scroll transitions
+                await asyncio.sleep(3)  # Increased from 2.5s to 3s for extra safety
                 
                 # Check completion
                 stats = self.bot.get_stats()

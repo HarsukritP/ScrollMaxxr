@@ -106,7 +106,7 @@ startBtn.addEventListener('click', async () => {
     const isOnVideo = tab.url.includes('tiktok.com/@') && tab.url.includes('/video/');
     
     if (!isOnFYP && !isOnVideo) {
-      showMessage('⚠️ Please navigate to: tiktok.com/foryou', 'error');
+      showMessage('Please navigate to tiktok.com/foryou', 'error');
       resetUI();
       return;
     }
@@ -210,19 +210,19 @@ async function checkPageStatus() {
     const pageStatus = document.getElementById('page-status');
     
     if (!tab.url.includes('tiktok.com')) {
-      pageStatus.innerHTML = '❌ Not on TikTok - Please navigate to <strong>tiktok.com/foryou</strong>';
+      pageStatus.innerHTML = 'Not on TikTok - Please navigate to <strong>tiktok.com/foryou</strong>';
       pageStatus.className = 'page-status status-error';
       startBtn.disabled = true;
     } else if (tab.url.includes('/foryou')) {
-      pageStatus.innerHTML = '✅ On For You Page - Ready to calibrate!';
+      pageStatus.innerHTML = 'On For You Page - Ready to calibrate';
       pageStatus.className = 'page-status status-success';
       startBtn.disabled = false;
     } else if (tab.url.includes('/@') && tab.url.includes('/video/')) {
-      pageStatus.innerHTML = '✅ On TikTok video - Ready to calibrate!';
+      pageStatus.innerHTML = 'On TikTok video - Ready to calibrate';
       pageStatus.className = 'page-status status-success';
       startBtn.disabled = false;
     } else {
-      pageStatus.innerHTML = '⚠️ Please navigate to <strong>tiktok.com/foryou</strong> to start';
+      pageStatus.innerHTML = 'Please navigate to <strong>tiktok.com/foryou</strong> to start';
       pageStatus.className = 'page-status status-warning';
       startBtn.disabled = true;
     }
