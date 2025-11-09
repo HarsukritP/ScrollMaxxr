@@ -436,29 +436,22 @@ async function scrollToNextVideo() {
   try {
     console.log('[ScrollMaxxr] Attempting to scroll to next video...');
     
-    // Get current video URL to verify we actually moved
-    const currentUrl = window.location.href;
-    
-    // Method 1: Click the down navigation button (most reliable)
-    const downButton = document.querySelector('[data-e2e="arrow-down"]') ||
-                      document.querySelector('button[aria-label*="Down"]') ||
-                      document.querySelector('[class*="arrow-bottom"]');
-    
-    if (downButton && downButton.offsetParent !== null) {
-      console.log('[ScrollMaxxr] Clicking down arrow button');
-      downButton.click();
-      await sleep(randomDelay(2000, 3000));
-      
-      // Verify we moved
-      if (window.location.href !== currentUrl) {
-        console.log('[ScrollMaxxr] ✅ Successfully navigated to next video');
-        return;
+    // Get current video ID to verify we actually moved
+    const getCurrentVideoId = () => {
+      const link = document.querySelector('a[href*="/video/"]');
+      if (link) {
+        const match = link.href.match(/\/video\/(\d+)/);
+        return match ? match[1] : null;
       }
-    }
+      return null;
+    };
     
-    // Method 2: Arrow Down keypress
-    console.log('[ScrollMaxxr] Trying Arrow Down key...');
-    window.dispatchEvent(new KeyboardEvent('keydown', {
+    const currentVideoId = getCurrentVideoId();
+    console.log('[ScrollMaxxr] Current video ID:', currentVideoId);
+    
+    // Method 1: Simulate physical Arrow Down key (most reliable for TikTok)
+    console.log('[ScrollMaxxr] Simulating Arrow Down key...');
+    document.dispatchEvent(new KeyboardEvent('keydown', {
       key: 'ArrowDown',
       code: 'ArrowDown',
       keyCode: 40,
@@ -467,30 +460,47 @@ async function scrollToNextVideo() {
       cancelable: true
     }));
     
+    // Wait for video to change
     await sleep(randomDelay(2000, 3000));
     
-    // Verify we moved
-    if (window.location.href !== currentUrl) {
-      console.log('[ScrollMaxxr] ✅ Arrow Down worked - navigated to next video');
+    // Check if video changed
+    const newVideoId = getCurrentVideoId();
+    if (newVideoId && newVideoId !== currentVideoId) {
+      console.log('[ScrollMaxxr] ✅ Successfully navigated to next video (ID changed:', currentVideoId, '→', newVideoId, ')');
+      return;
+    }
+    
+    // Method 2: Try mousewheel scroll
+    console.log('[ScrollMaxxr] Trying mousewheel scroll...');
+    window.dispatchEvent(new WheelEvent('wheel', {
+      deltaY: window.innerHeight,
+      bubbles: true,
+      cancelable: true
+    }));
+    
+    await sleep(randomDelay(2000, 3000));
+    
+    const videoIdAfterWheel = getCurrentVideoId();
+    if (videoIdAfterWheel && videoIdAfterWheel !== currentVideoId) {
+      console.log('[ScrollMaxxr] ✅ Mousewheel worked - navigated to next video (ID changed:', currentVideoId, '→', videoIdAfterWheel, ')');
       return;
     }
     
     // Method 3: Aggressive scroll
     console.log('[ScrollMaxxr] Trying aggressive scroll...');
-    const scrollAmount = window.innerHeight * 1.2;
-    window.scrollTo({
-      top: window.scrollY + scrollAmount,
+    window.scrollBy({
+      top: window.innerHeight * 1.5,
       behavior: 'smooth'
     });
     
     await sleep(randomDelay(2000, 3000));
     
-    // Log result
-    if (window.location.href !== currentUrl) {
-      console.log('[ScrollMaxxr] ✅ Scroll worked - navigated to next video');
+    const finalVideoId = getCurrentVideoId();
+    if (finalVideoId && finalVideoId !== currentVideoId) {
+      console.log('[ScrollMaxxr] ✅ Scroll worked - navigated to next video (ID changed:', currentVideoId, '→', finalVideoId, ')');
     } else {
-      console.warn('[ScrollMaxxr] ⚠️ All scroll methods failed - URL unchanged');
-      console.log('[ScrollMaxxr] Current URL:', currentUrl);
+      console.warn('[ScrollMaxxr] ⚠️ All scroll methods failed - video ID unchanged:', currentVideoId);
+      console.log('[ScrollMaxxr] This might mean TikTok has anti-automation measures. Try manually scrolling once to "activate" the page.');
     }
   } catch (error) {
     console.error('[ScrollMaxxr] Error scrolling:', error);
