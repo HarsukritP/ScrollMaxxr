@@ -33,22 +33,24 @@ SYSTEM_PROMPT = """You are a TikTok content classifier. Analyze the video screen
 
 User wants to see: {desired_content}
 
-Your task: Determine if this video matches what the user wants to see.
+Your task: Determine how well this video matches what the user wants to see.
 
 Return ONLY a JSON object in this exact format:
-{{"isMatch": true, "confidence": 0.85, "reasoning": "brief explanation"}}
+{{"confidence": float 0.0-1.0, "reasoning": "brief explanation"}}
 
-or
+Use confidence scores:
+- 0.0-0.3: Poor match or completely unrelated
+- 0.3-0.5: Weak match, some relevance but not quite right
+- 0.5-0.7: Good match, clearly related
+- 0.7-0.9: Strong match, exactly what user wants
+- 0.9-1.0: Perfect match
 
-{{"isMatch": false, "confidence": 0.3, "reasoning": "brief explanation"}}
-
-Be strict in classification. If unsure or borderline, use isMatch: false and confidence < 0.5.
 Focus on both visual elements in the screenshot AND text content (caption, hashtags)."""
 
 
 class LLMClassifier:
     """
-    Multimodal LLM classifier for TikTok content using OpenAI GPT-5-nano.
+    Multimodal LLM classifier for TikTok content using OpenAI GPT-5 with multi-frame analysis.
     """
     
     def __init__(self):
@@ -57,7 +59,7 @@ class LLMClassifier:
             logger.error("OpenAI API key not found in environment variables")
             raise ValueError("OPENAI_API_KEY environment variable is required")
         
-        logger.info("OpenAI GPT-5-nano classifier initialized")
+        logger.info("OpenAI GPT-5 classifier initialized")
     
     async def classify(
         self,
@@ -68,13 +70,14 @@ class LLMClassifier:
         category: str,
         category_description: str,
         video_url: str = None,
-        transcript: str = None
+        transcript: str = None,
+        all_screenshots: list = None
     ) -> dict:
         """
-        Classify video content using OpenAI GPT-5-nano.
+        Classify video content using OpenAI GPT-5 (multi-frame vision).
         
         Args:
-            image: Video screenshot as bytes
+            image: Video screenshot as bytes (fallback)
             caption: Video caption text
             hashtags: List of hashtags
             username: Video author username
@@ -84,7 +87,7 @@ class LLMClassifier:
             transcript: Optional pre-fetched transcript
         
         Returns:
-            dict with isMatch, category, confidence, reasoning
+            dict with category, confidence, reasoning
         """
         try:
             # DISABLED: Transcript fetching to avoid API quota issues
@@ -108,27 +111,16 @@ class LLMClassifier:
             
             logger.info(f"Classifying for: {desired_content}")
             
-            # Try OpenAI classification
-            try:
-                result = await self._classify_with_openai(
-                    image, caption, hashtags, username, desired_content, category, transcript
-                )
-                return result
-            except Exception as e:
-                logger.warning(f"OpenAI classification failed: {e}")
-                # Fallback to rule-based
-                logger.warning("Falling back to rule-based classification")
-                return self._rule_based_classify(caption, hashtags, category, category_description)
+            # Call OpenAI classification - let it fail if it fails
+            result = await self._classify_with_openai(
+                image, caption, hashtags, username, desired_content, category, transcript,
+                all_screenshots=all_screenshots
+            )
+            return result
             
         except Exception as e:
             logger.error(f"Classification error: {e}")
-            # Return a safe fallback result
-            return {
-                'isMatch': False,
-                'category': category,
-                'confidence': 0.0,
-                'reasoning': f'Classification failed: {str(e)}'
-            }
+            raise  # Re-raise the error instead of hiding it
     
     async def _classify_with_openai(
         self,
@@ -138,9 +130,10 @@ class LLMClassifier:
         username: str,
         desired_content: str,
         category: str,
-        transcript: str = None
+        transcript: str = None,
+        all_screenshots: list = None
     ) -> dict:
-        """Classify using OpenAI GPT-5-nano"""
+        """Classify using OpenAI GPT-5"""
         
         # Build system prompt
         system_prompt = SYSTEM_PROMPT.format(desired_content=desired_content)
@@ -154,22 +147,58 @@ Username: @{username}"""
         if transcript:
             user_prompt += f"\nVideo Transcript: {transcript[:500]}"  # Limit to 500 chars to save tokens
         
-        user_prompt += "\n\nAnalyze the image and text above. Does this video match what the user wants to see?\nReturn JSON only (no other text)."
+        # If multiple screenshots provided, explain they're sequential
+        if all_screenshots and len(all_screenshots) > 1:
+            user_prompt += f"\n\nYou are provided with {len(all_screenshots)} sequential frames from the video, captured at 1-second intervals from the beginning. Analyze all frames together to understand the video content and progression.\n\nDoes this video match what the user wants to see?\nReturn JSON only (no other text)."
+        else:
+            user_prompt += "\n\nAnalyze the image and text above. Does this video match what the user wants to see?\nReturn JSON only (no other text)."
         
-        # Encode image to base64
-        image_base64 = base64.b64encode(image).decode('utf-8')
+        # Build content array with text and images
+        content_items = [
+            {
+                "type": "text",
+                "text": user_prompt
+            }
+        ]
         
-        # Validate we have real image data (not a tiny placeholder)
-        if len(image) < 1000:
-            logger.warning("Image data is suspiciously small, may be invalid")
-            # Fall back to text-only classification
-            return self._rule_based_classify(caption, hashtags, category, category_description)
+        # Add all screenshots if provided, otherwise use single image
+        if all_screenshots and len(all_screenshots) > 0:
+            for i, screenshot in enumerate(all_screenshots):
+                # Extract base64 data (remove data:image/jpeg;base64, prefix if present)
+                if ',' in screenshot:
+                    screenshot_base64 = screenshot.split(',')[1]
+                else:
+                    screenshot_base64 = screenshot
+                
+                content_items.append({
+                    "type": "image_url",
+                    "image_url": {
+                        "url": f"data:image/jpeg;base64,{screenshot_base64}",
+                        "detail": "high"  # Use high detail for better analysis
+                    }
+                })
+                logger.info(f"Added frame {i+1}/{len(all_screenshots)} to GPT request")
+        else:
+            # Fallback to single image
+            image_base64 = base64.b64encode(image).decode('utf-8')
+            
+            # Validate we have real image data (not a tiny placeholder)
+            if len(image) < 1000:
+                raise ValueError(f"Image data is too small ({len(image)} bytes), likely invalid screenshot")
+            
+            content_items.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/jpeg;base64,{image_base64}",
+                    "detail": "high"  # Use high detail for better analysis
+                }
+            })
         
-        logger.info("Sending request to OpenAI GPT-5-nano...")
+        logger.info(f"Sending request to OpenAI GPT-5 with {len(content_items)-1} image(s)...")
         
         # Call OpenAI API with vision
         response = client.chat.completions.create(
-            model="gpt-5-nano-2025-08-07",
+            model="gpt-5",
             messages=[
                 {
                     "role": "system",
@@ -177,22 +206,10 @@ Username: @{username}"""
                 },
                 {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": user_prompt
-                        },
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{image_base64}",
-                                "detail": "low"  # Use low detail for faster processing
-                            }
-                        }
-                    ]
+                    "content": content_items
                 }
             ],
-            max_completion_tokens=1000  # Increased for reasoning_tokens (300) + actual response content
+            max_completion_tokens=1000
         )
         
         logger.info("OpenAI response received")
@@ -205,8 +222,7 @@ Username: @{username}"""
             logger.error("OpenAI returned EMPTY response!")
             logger.error(f"Full response object: {response}")
             result = {
-                'isMatch': False,
-                'confidence': 0.5,
+                'confidence': 0.0,
                 'reasoning': 'OpenAI returned empty response'
             }
         else:
@@ -225,17 +241,10 @@ Username: @{username}"""
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse JSON: {e}")
                 logger.error(f"Full response text ({len(result_text)} chars): '{result_text}'")
-                # Try to extract boolean from text
-                is_match = 'true' in result_text.lower() or '"ismatch": true' in result_text.lower()
                 result = {
-                    'isMatch': is_match,
-                    'confidence': 0.5,
+                    'confidence': 0.3,
                     'reasoning': f'Failed to parse JSON: {result_text[:100]}'
                 }
-        
-        # Ensure isMatch is boolean
-        if isinstance(result.get('isMatch'), str):
-            result['isMatch'] = result['isMatch'].lower() == 'true'
         
         # Add category to result
         result['category'] = category
@@ -250,51 +259,6 @@ Username: @{username}"""
             result['reasoning'] = 'No reasoning provided'
         
         logger.info(f"Classification complete: {result}")
-        
-        return result
-    
-    def _rule_based_classify(
-        self,
-        caption: str,
-        hashtags: List[str],
-        category: str,
-        category_description: str
-    ) -> dict:
-        """
-        Simple keyword-based classification as fallback.
-        """
-        logger.info("Using rule-based classification")
-        
-        # Combine caption and hashtags
-        text = (caption + ' ' + ' '.join(hashtags)).lower()
-        
-        # Extract keywords from description
-        if category == "Custom":
-            keywords = category_description.lower().split()
-        else:
-            keywords = CATEGORIES.get(category, category_description).lower().split()
-        
-        # Remove common words
-        stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for'}
-        keywords = [k for k in keywords if k not in stop_words and len(k) > 2]
-        
-        # Count keyword matches
-        match_score = sum(1 for keyword in keywords if keyword in text)
-        
-        # Calculate confidence
-        confidence = min(match_score / max(len(keywords) / 2, 1), 1.0)
-        
-        # Simple threshold: need at least 2 keyword matches or 30% confidence
-        is_match = match_score >= 2 or confidence >= 0.3
-        
-        result = {
-            'isMatch': is_match,
-            'category': category,
-            'confidence': confidence,
-            'reasoning': f'Keyword matching: {match_score}/{len(keywords)} keywords found (fallback method)'
-        }
-        
-        logger.info(f"Rule-based result: {result}")
         
         return result
 

@@ -201,11 +201,13 @@ function updateStats(stats) {
   
   // Show last classification if available
   if (stats.lastClassification) {
-    const { isMatch, confidence, reasoning } = stats.lastClassification;
-    const emoji = isMatch ? '✅' : '❌';
+    const { confidence, reasoning, isMatch } = stats.lastClassification;
+    // Determine match based on confidence threshold (>= 0.5)
+    const matchStatus = isMatch !== undefined ? isMatch : (confidence >= 0.5);
+    const emoji = matchStatus ? '✅' : '❌';
     const confPercent = Math.round(confidence * 100);
-    showMessage(`${emoji} ${isMatch ? 'MATCH' : 'Skip'} (${confPercent}%): ${reasoning}`, 
-                isMatch ? 'success' : 'info');
+    showMessage(`${emoji} ${matchStatus ? 'MATCH' : 'Skip'} (${confPercent}%): ${reasoning}`, 
+                matchStatus ? 'success' : 'info');
   }
 }
 

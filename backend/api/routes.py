@@ -26,7 +26,7 @@ async def classify_video(video_data: VideoData):
         video_data: VideoData containing caption, hashtags, screenshot, etc.
     
     Returns:
-        ClassificationResult with isMatch, category, confidence, and reasoning
+        ClassificationResult with category, confidence, and reasoning
     """
     try:
         logger.info(f"Classifying video: {video_data.videoUrl}")

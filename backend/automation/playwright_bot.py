@@ -163,14 +163,19 @@ class TikTokBot:
             return None
         
         try:
-            # Wait a bit for page to stabilize
-            await asyncio.sleep(1)
-            
-            # Find active video
+            # Find active video (no wait - video is already ready from scroll)
             video = await self.page.query_selector('video')
             if not video:
                 logger.warning("No video element found")
                 return None
+            
+            # Start capturing screenshots immediately (video is ready)
+            logger.info("Capturing screenshots while page stabilizes...")
+            screenshot_task = asyncio.create_task(self._capture_screenshots(video))
+            
+            # Wait for page stabilization (for metadata elements)
+            logger.info("Waiting for page stabilization...")
+            await asyncio.sleep(1.0)
             
             # DEBUG: Log page structure
             page_info = await self.page.evaluate("""
@@ -222,6 +227,16 @@ class TikTokBot:
                         // If no container, use whole document
                         if (!container) {
                             container = document.body;
+                        }
+                        
+                        // 🚨 CHECK FOR LIVE VIDEO (these break the flow)
+                        const liveBadge = container.querySelector('[data-e2e="live-badge"]') ||
+                                         container.querySelector('[class*="LiveTag"]') ||
+                                         document.querySelector('[data-e2e="live-badge"]') ||
+                                         document.querySelector('span[style*="LIVE"]');
+                        
+                        if (liveBadge) {
+                            return { error: 'LIVE video detected - skipping' };
                         }
                         
                         // Extract username (multiple selectors)
@@ -287,7 +302,14 @@ class TikTokBot:
             logger.info(f"JS evaluation result: {video_data}")
             
             if not video_data or video_data.get('error'):
-                logger.error(f"Failed to extract: {video_data}")
+                error_msg = video_data.get('error', 'Unknown error') if video_data else 'No data'
+                
+                # Special handling for LIVE videos
+                if 'LIVE' in str(error_msg).upper():
+                    logger.warning("🔴 LIVE video detected - skipping (these break the scroll flow)")
+                else:
+                    logger.error(f"Failed to extract: {error_msg}")
+                
                 return None
             
             # Remove debug info before returning
@@ -300,25 +322,18 @@ class TikTokBot:
                 logger.warning("Could not identify username, skipping video")
                 return None
             
-            # Capture MULTIPLE screenshots (3-5 frames) for better analysis
-            # Single frame can be blurry/random, multiple frames give better context
-            logger.info("Capturing multiple frames...")
-            screenshots = []
-            for i in range(4):  # Capture 4 frames
-                screenshot_bytes = await video.screenshot(type='jpeg', quality=60)
-                screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
-                screenshots.append(f"data:image/jpeg;base64,{screenshot_base64}")
-                
-                # Small delay between captures (0.3s = ~9 frames at 30fps)
-                if i < 3:  # Don't wait after last capture
-                    await asyncio.sleep(0.3)
+            # Wait for screenshot task to complete (should be done by now)
+            logger.info("Waiting for screenshots to finish...")
+            screenshots = await screenshot_task
             
-            # For now, send the middle frame (most likely to be stable)
-            # TODO: Send all frames to GPT for multi-frame analysis
-            video_data['screenshot'] = screenshots[1]  # 2nd frame (index 1)
-            video_data['allScreenshots'] = screenshots  # Store all for potential use
+            if not screenshots:
+                logger.error("Screenshot capture failed")
+                return None
             
-            logger.info(f"✅ Extracted video with {len(screenshots)} frames: {video_data['videoUrl']}")
+            # Store all screenshots for GPT analysis
+            video_data['allScreenshots'] = screenshots  # All 3 frames will be sent to GPT
+            
+            logger.info(f"✅ Extracted video with {len(screenshots)} sequential frames: {video_data['videoUrl']}")
             self.stats['currentVideo'] = video_data['videoUrl']
             
             return video_data
@@ -370,13 +385,28 @@ class TikTokBot:
             
             # Method 1: Arrow Down key
             await self.page.keyboard.press('ArrowDown')
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)  # Reduced from 1s
             
             # Method 2: Wheel event (backup)
             await self.page.evaluate('window.scrollBy({top: window.innerHeight, behavior: "smooth"})')
             
-            # Wait for new video to load
-            await asyncio.sleep(2 + (asyncio.get_event_loop().time() % 1))
+            # Wait for scroll animation to complete
+            await asyncio.sleep(0.5)  # Reduced from 1.5s
+            
+            # Wait for video to actually start playing (not just loaded)
+            try:
+                await self.page.wait_for_function(
+                    """
+                    () => {
+                        const video = document.querySelector('video');
+                        return video && video.readyState >= 2 && !video.paused;
+                    }
+                    """,
+                    timeout=3000
+                )
+                logger.info("✅ Video loaded and playing")
+            except Exception as e:
+                logger.warning(f"Video may not be playing, proceeding anyway: {e}")
             
             logger.info("✅ Scrolled to next video")
             return True
@@ -411,6 +441,37 @@ class TikTokBot:
             
         except Exception as e:
             logger.error(f"Error during cleanup: {e}")
+    
+    async def _capture_screenshots(self, video) -> List[str]:
+        """
+        Capture 3 sequential screenshots of the video
+        
+        Args:
+            video: Playwright video element handle
+            
+        Returns:
+            List of base64-encoded screenshot data URLs
+        """
+        try:
+            screenshots = []
+            num_frames = 3
+            quality = 50  # Good quality for GPT vision analysis
+            
+            for i in range(num_frames):
+                screenshot_bytes = await video.screenshot(type='jpeg', quality=quality)
+                screenshot_base64 = base64.b64encode(screenshot_bytes).decode('utf-8')
+                screenshots.append(f"data:image/jpeg;base64,{screenshot_base64}")
+                logger.info(f"Captured frame {i+1}/{num_frames}")
+                
+                # 1 second delay between captures
+                if i < num_frames - 1:
+                    await asyncio.sleep(1.0)
+            
+            return screenshots
+            
+        except Exception as e:
+            logger.error(f"Error capturing screenshots: {e}")
+            return []
     
     def get_stats(self) -> Dict:
         """Get current stats"""

@@ -64,13 +64,19 @@ async def start_session(request: SessionStartRequest):
         logger.info(f"Category: {request.category}")
         logger.info(f"Cookies: {len(request.cookies)} cookies")
         
-        # Create session
+        # Create stats callback that broadcasts to WebSocket
+        async def stats_callback(stats: Dict):
+            logger.info(f"📤 Broadcasting stats for session {session_id}: {stats}")
+            await manager.send_stats(session_id, stats)
+        
+        # Create session with callback
         session = create_session(
             session_id=session_id,
             category=request.category,
             category_description=request.categoryDescription,
             cookies=request.cookies,
-            user_agent=request.userAgent
+            user_agent=request.userAgent,
+            stats_callback=stats_callback  # Pass callback at creation time
         )
         
         # Start session
@@ -210,20 +216,24 @@ async def websocket_endpoint(websocket: WebSocket, session_id: str):
     
     Connect to this endpoint to receive live stats during calibration
     """
+    logger.info(f"🔌 WebSocket connection request for session {session_id}")
     await manager.connect(session_id, websocket)
     
     try:
-        # Set up callback for session stats
+        # Verify session exists
         session = get_session(session_id)
         if session:
-            # Update the session's stats callback
-            async def stats_callback(stats: Dict):
-                await manager.send_stats(session_id, stats)
-            
-            session.stats_callback = stats_callback
-            
-            # Send initial stats
+            logger.info(f"✅ Found session {session_id}, WebSocket connected")
+            # Send initial stats immediately
             await manager.send_stats(session_id, session.get_status())
+        else:
+            logger.error(f"❌ Session {session_id} not found for WebSocket!")
+            # Send error message
+            await websocket.send_json({
+                'error': 'Session not found',
+                'session_id': session_id,
+                'status': 'error'
+            })
         
         # Keep connection alive and listen for messages
         while True:

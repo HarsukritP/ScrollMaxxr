@@ -213,9 +213,13 @@ async function processCurrentVideo() {
 
         console.log('[ScrollMaxxr] Classification:', response);
 
+        // Determine match based on confidence threshold (>= 0.5)
+        const CONFIDENCE_THRESHOLD = 0.5;
+        const isMatch = response.confidence >= CONFIDENCE_THRESHOLD;
+
         // Update stats
         stats.videosProcessed++;
-        if (response.isMatch) {
+        if (isMatch) {
           stats.matchesFound++;
         }
         stats.matchRate = stats.matchesFound / stats.videosProcessed;
@@ -232,11 +236,11 @@ async function processCurrentVideo() {
         }
 
         // Execute action
-        if (response.isMatch) {
-          console.log('[ScrollMaxxr] Match found! Liking video...');
+        if (isMatch) {
+          console.log(`[ScrollMaxxr] Match found! (confidence ${response.confidence} >= ${CONFIDENCE_THRESHOLD}) Liking video...`);
           await likeVideo();
         } else {
-          console.log('[ScrollMaxxr] No match, scrolling...');
+          console.log(`[ScrollMaxxr] No match (confidence ${response.confidence} < ${CONFIDENCE_THRESHOLD}), scrolling...`);
         }
 
         await scrollToNextVideo();

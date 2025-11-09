@@ -19,7 +19,6 @@ class VideoData(BaseModel):
 
 class ClassificationResult(BaseModel):
     """Result of video classification"""
-    isMatch: bool = Field(..., description="Whether video matches user's desired content")
     category: str = Field(..., description="Category name")
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence score (0-1)")
     reasoning: str = Field(default="", description="Explanation of classification")

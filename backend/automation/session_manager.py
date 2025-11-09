@@ -73,68 +73,90 @@ class CalibrationSession:
                 
                 if not video_data:
                     logger.warning("Failed to extract video data, scrolling to next...")
+                    
+                    # Send stats update even when skipping (keeps UI responsive)
+                    if self.stats_callback:
+                        stats = self.bot.get_stats()
+                        await self.stats_callback(stats)
+                    
                     await self.bot.scroll_to_next_video()
-                    # Wait longer for page to stabilize after scroll
-                    await asyncio.sleep(4)
+                    await asyncio.sleep(2)  # Reduced from 4s to 2s
                     continue
+                
+                # Update current video in stats (ALWAYS update this)
+                self.bot.stats['currentVideo'] = video_data.get('videoUrl', 'N/A')
+                
+                # Send stats update to keep UI in sync
+                if self.stats_callback:
+                    logger.info(f"📊 Sending stats update: {self.bot.get_stats()}")
+                    await self.stats_callback(self.bot.get_stats())
+                else:
+                    logger.warning("⚠️ No stats_callback set - UI will not update!")
                 
                 logger.info(f"Processing: {video_data['videoUrl']}")
                 
                 # Classify video with GPT (only called when we have valid video data)
-                try:
-                    # Decode screenshot
-                    screenshot_data = video_data['screenshot'].split(',')[1]  # Remove data:image/jpeg;base64,
-                    import base64
+                # No try/catch here - if classification fails, the session should stop
+                # Get all screenshots for multi-frame analysis
+                import base64
+                all_screenshots = video_data.get('allScreenshots', [])
+                
+                # Decode first screenshot as fallback single image (for backwards compatibility)
+                if all_screenshots:
+                    screenshot_data = all_screenshots[0].split(',')[1] if ',' in all_screenshots[0] else all_screenshots[0]
                     screenshot_bytes = base64.b64decode(screenshot_data)
-                    
-                    # Classify with LLM
-                    classification = await self.classifier.classify(
-                        image=screenshot_bytes,
-                        caption=video_data.get('caption', ''),
-                        hashtags=video_data.get('hashtags', []),
-                        username=video_data.get('username', ''),
-                        category=self.category,
-                        category_description=self.category_description
-                    )
-                    
-                    is_match = classification.get('isMatch', False)
-                    confidence = classification.get('confidence', 0.0)
-                    reasoning = classification.get('reasoning', '')
-                    
-                    logger.info(f"Classification: isMatch={is_match}, confidence={confidence:.2f}")
-                    logger.info(f"Reasoning: {reasoning}")
-                    
-                    # Update stats
-                    self.bot.update_stats(is_match)
-                    
-                    # Execute action based on classification
-                    if is_match:
-                        logger.info("✅ MATCH! Liking video...")
-                        await self.bot.like_video()
-                        await asyncio.sleep(1)  # Short delay after liking
-                    else:
-                        logger.info("❌ No match, skipping...")
-                    
-                    # Send stats update via callback
-                    if self.stats_callback:
-                        stats = self.bot.get_stats()
-                        stats['lastClassification'] = {
-                            'isMatch': is_match,
-                            'confidence': confidence,
-                            'reasoning': reasoning,
-                            'videoUrl': video_data['videoUrl']
-                        }
-                        await self.stats_callback(stats)
-                    
-                except Exception as e:
-                    logger.error(f"Classification error: {e}")
+                else:
+                    screenshot_bytes = b''
+                
+                # Classify with LLM (send all screenshots)
+                classification = await self.classifier.classify(
+                    image=screenshot_bytes,
+                    caption=video_data.get('caption', ''),
+                    hashtags=video_data.get('hashtags', []),
+                    username=video_data.get('username', ''),
+                    category=self.category,
+                    category_description=self.category_description,
+                    all_screenshots=all_screenshots
+                )
+                
+                confidence = classification.get('confidence', 0.0)
+                reasoning = classification.get('reasoning', '')
+                
+                # Determine match based on confidence threshold (0.5 = 50%)
+                CONFIDENCE_THRESHOLD = 0.5
+                is_match = confidence >= CONFIDENCE_THRESHOLD
+                
+                logger.info(f"Classification: confidence={confidence:.2f} (threshold={CONFIDENCE_THRESHOLD})")
+                logger.info(f"Reasoning: {reasoning}")
+                
+                # Update stats
+                self.bot.update_stats(is_match)
+                
+                # Execute action based on classification
+                if is_match:
+                    logger.info(f"✅ MATCH! (confidence {confidence:.2f} >= {CONFIDENCE_THRESHOLD}) Liking video...")
+                    await self.bot.like_video()
+                    await asyncio.sleep(1)  # Short delay after liking
+                else:
+                    logger.info(f"❌ No match (confidence {confidence:.2f} < {CONFIDENCE_THRESHOLD}), skipping...")
+                
+                # Send stats update via callback
+                if self.stats_callback:
+                    stats = self.bot.get_stats()
+                    stats['lastClassification'] = {
+                        'confidence': confidence,
+                        'reasoning': reasoning,
+                        'videoUrl': video_data['videoUrl'],
+                        'isMatch': is_match  # Keep for frontend compatibility
+                    }
+                    await self.stats_callback(stats)
                 
                 # Scroll to next video (after classification is done)
                 logger.info("Scrolling to next video...")
                 await self.bot.scroll_to_next_video()
                 
-                # Wait for scroll to complete and new video to load (3-5s)
-                await asyncio.sleep(4)
+                # Wait for scroll to complete and new video to load (reduced for speed)
+                await asyncio.sleep(1.5)  # Reduced from 3s to 1.5s
                 
                 # Check completion
                 stats = self.bot.get_stats()
