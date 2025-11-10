@@ -465,194 +465,152 @@ class TikTokBot:
     
     async def like_video(self):
         """Like the current video by DOUBLE-TAPPING the video element (like mobile TikTok)
-        Will retry up to 3 times if the like fails"""
+        Simple and fast - verification happens later before scroll"""
         if not self.page:
             return False
         
-        MAX_RETRIES = 3
+        try:
+            logger.info("Double-tapping video to like...")
+            
+            # Check if already liked
+            check = await self._check_if_liked()
+            if check.get('isLiked'):
+                logger.info(f"Video already liked (color: {check.get('likeColor')})")
+                return True
+            
+            # Get the video element using Playwright
+            video_element = await self.page.query_selector('video')
+            if not video_element:
+                logger.error("Could not find video element")
+                return False
+            
+            # Get the center position of the video for tapping
+            video_box = await video_element.bounding_box()
+            if not video_box:
+                logger.error("Could not get video bounding box")
+                return False
+            
+            tap_x = video_box['x'] + video_box['width'] / 2
+            tap_y = video_box['y'] + video_box['height'] / 2
+            
+            logger.info(f"Double-tapping at ({tap_x:.0f}, {tap_y:.0f})...")
+            
+            # Perform DOUBLE-TAP
+            await self.page.mouse.click(tap_x, tap_y)
+            await asyncio.sleep(0.2)  # 200ms between taps
+            await self.page.mouse.click(tap_x, tap_y)
+            
+            logger.info("Double-tap completed - giving TikTok time to register...")
+            await asyncio.sleep(2.0)  # Short wait for animation to start
+            
+            # Quick verification
+            verify = await self._check_if_liked()
+            if verify.get('isLiked'):
+                logger.info(f"✓ Like registered (color: {verify.get('color')})")
+                return True
+            else:
+                logger.warning(f"⚠️ Like may not have registered yet (color: {verify.get('color')})")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to like video: {e}")
+            return False
+    
+    async def verify_and_retry_like(self):
+        """Check if video is still liked, retry if not. Called right before scrolling."""
+        if not self.page:
+            return False
         
-        for attempt in range(1, MAX_RETRIES + 1):
+        MAX_ATTEMPTS = 5
+        
+        for attempt in range(1, MAX_ATTEMPTS + 1):
             try:
-                logger.info(f"Looking for visible video to double-tap for like (attempt {attempt}/{MAX_RETRIES})...")
+                logger.info(f"Verifying like status before scroll (attempt {attempt}/{MAX_ATTEMPTS})...")
                 
-                # Find the currently visible video element
-                video_info = await self.page.evaluate("""
-                    () => {
-                        // Step 1: Find the currently visible video
-                        const videos = Array.from(document.querySelectorAll('video'));
-                        let activeVideo = null;
-                        
-                        for (const vid of videos) {
-                            const rect = vid.getBoundingClientRect();
-                            // Video is visible if it's roughly in the center of viewport
-                            const isInCenter = rect.top >= -100 && rect.top <= 300;
-                            if (isInCenter) {
-                                activeVideo = vid;
-                                break;
-                            }
-                        }
-                        
-                        if (!activeVideo && videos.length > 0) {
-                            activeVideo = videos[0];
-                        }
-                        
-                        if (!activeVideo) {
-                            return { found: false, reason: 'No video element found' };
-                        }
-                        
-                        // Step 2: Check if already liked by checking the like button color
-                        const article = activeVideo.closest('article');
-                        if (article) {
-                            const likeButton = article.querySelector('button[aria-label^="Like video"]');
-                            if (likeButton) {
-                                const span = likeButton.querySelector('span[data-e2e="like-icon"]');
-                                const color = span?.style.color || window.getComputedStyle(span).color;
-                                const isLiked = color.includes('254') || color.includes('FE2C');
-                                
-                                return {
-                                    found: true,
-                                    isLiked: isLiked,
-                                    likeColor: color
-                                };
-                            }
-                        }
-                        
-                        return {
-                            found: true,
-                            isLiked: false,
-                            likeColor: 'unknown'
-                        };
-                    }
-                """)
+                check = await self._check_if_liked()
                 
-                if not video_info.get('found'):
-                    logger.warning(f"Could not find video: {video_info.get('reason')}")
-                    if attempt < MAX_RETRIES:
-                        logger.info(f"Retrying in 1 second...")
-                        await asyncio.sleep(1.0)
-                        continue
-                    return False
-                
-                if video_info.get('isLiked'):
-                    logger.info(f"Video already liked (color: {video_info.get('likeColor')})")
-                    return True
-                
-                logger.info("Found visible video - performing DOUBLE-TAP to like...")
-                
-                # Get the video element using Playwright
-                video_element = await self.page.query_selector('video')
-                if not video_element:
-                    logger.error("Could not find video element with Playwright")
-                    if attempt < MAX_RETRIES:
-                        logger.info(f"Retrying in 1 second...")
-                        await asyncio.sleep(1.0)
-                        continue
-                    return False
-                
-                # Get the center position of the video for tapping
-                video_box = await video_element.bounding_box()
-                if not video_box:
-                    logger.error("Could not get video bounding box")
-                    if attempt < MAX_RETRIES:
-                        logger.info(f"Retrying in 1 second...")
-                        await asyncio.sleep(1.0)
-                        continue
-                    return False
-                
-                tap_x = video_box['x'] + video_box['width'] / 2
-                tap_y = video_box['y'] + video_box['height'] / 2
-                
-                logger.info(f"Double-tapping video at position ({tap_x:.0f}, {tap_y:.0f})...")
-                
-                # Perform DOUBLE-TAP (like mobile TikTok)
-                # First tap
-                await self.page.mouse.click(tap_x, tap_y)
-                
-                # Wait 200ms between taps (as requested)
-                await asyncio.sleep(0.2)
-                
-                # Second tap
-                await self.page.mouse.click(tap_x, tap_y)
-                
-                logger.info("Double-tap completed - waiting for like animation...")
-                
-                # Wait for TikTok's like animation and API call to complete
-                await asyncio.sleep(4.0)  # Give extra time for double-tap to register
-                
-                # Verify the like worked by checking the like button color
-                like_check = await self._check_if_liked()
-                
-                if like_check.get('isLiked'):
-                    logger.info(f"Video LIKED successfully via double-tap on attempt {attempt}!")
-                    logger.info(f"   Like button color: {like_check.get('color')}")
-                    logger.info(f"   Aria label: {like_check.get('ariaLabel')}")
-                    
-                    # Extra delay to ensure like is fully committed to TikTok's backend
-                    logger.info("Waiting for like to be fully committed to backend...")
-                    await asyncio.sleep(3.0)
-                    
-                    # Final safety delay before returning
-                    await asyncio.sleep(1.0)
+                if check.get('isLiked'):
+                    logger.info(f"✓ Video is liked - safe to scroll (color: {check.get('color')})")
                     return True
                 else:
-                    logger.warning(f"Like verification failed on attempt {attempt}")
-                    logger.warning(f"   Color: {like_check.get('color')}")
+                    logger.warning(f"⚠️ Video is NOT liked! Color: {check.get('color')}")
+                    logger.info(f"Re-attempting like (attempt {attempt}/{MAX_ATTEMPTS})...")
                     
-                    if attempt < MAX_RETRIES:
-                        logger.info(f"Will retry like action (attempt {attempt + 1}/{MAX_RETRIES})...")
-                        await asyncio.sleep(2.0)  # Wait before retry
-                        continue
-                    else:
-                        logger.error(f"Like failed after {MAX_RETRIES} attempts - final color: {like_check.get('color')}")
+                    # Try to like again
+                    video_element = await self.page.query_selector('video')
+                    if video_element:
+                        video_box = await video_element.bounding_box()
+                        if video_box:
+                            tap_x = video_box['x'] + video_box['width'] / 2
+                            tap_y = video_box['y'] + video_box['height'] / 2
+                            
+                            # Double-tap again
+                            await self.page.mouse.click(tap_x, tap_y)
+                            await asyncio.sleep(0.2)
+                            await self.page.mouse.click(tap_x, tap_y)
+                            
+                            logger.info("Re-like double-tap completed, waiting...")
+                            await asyncio.sleep(2.5)  # Wait for registration
+                            
+                            # Check again
+                            recheck = await self._check_if_liked()
+                            if recheck.get('isLiked'):
+                                logger.info(f"✓ Re-like successful! Color: {recheck.get('color')}")
+                                return True
+                            else:
+                                logger.warning(f"Re-like failed, color: {recheck.get('color')}")
+                                if attempt < MAX_ATTEMPTS:
+                                    await asyncio.sleep(1.0)  # Brief wait before next attempt
+                                    continue
+                    
+                    if attempt >= MAX_ATTEMPTS:
+                        logger.error(f"Could not get like to stick after {MAX_ATTEMPTS} attempts")
                         return False
-                    
+                        
             except Exception as e:
-                logger.error(f"Error on like attempt {attempt}: {e}")
-                if attempt < MAX_RETRIES:
-                    logger.info(f"Will retry after error (attempt {attempt + 1}/{MAX_RETRIES})...")
-                    await asyncio.sleep(2.0)
+                logger.error(f"Error during like verification: {e}")
+                if attempt < MAX_ATTEMPTS:
+                    await asyncio.sleep(1.0)
                     continue
-                else:
-                    logger.error(f"Failed to like video after {MAX_RETRIES} attempts")
-                    return False
+                return False
         
         return False
     
     async def _check_if_liked(self) -> dict:
         """Helper method to check if the current video is liked by examining the heart button color"""
         return await self.page.evaluate("""
-            () => {
-                const videos = Array.from(document.querySelectorAll('video'));
-                let activeVideo = null;
-                
-                for (const vid of videos) {
-                    const rect = vid.getBoundingClientRect();
-                    const isInCenter = rect.top >= -100 && rect.top <= 300;
-                    if (isInCenter) {
-                        activeVideo = vid;
-                        break;
+                () => {
+                    const videos = Array.from(document.querySelectorAll('video'));
+                    let activeVideo = null;
+                    
+                    for (const vid of videos) {
+                        const rect = vid.getBoundingClientRect();
+                        const isInCenter = rect.top >= -100 && rect.top <= 300;
+                        if (isInCenter) {
+                            activeVideo = vid;
+                            break;
+                        }
                     }
-                }
-                
-                if (!activeVideo && videos.length > 0) {
-                    activeVideo = videos[0];
-                }
-                
-                if (!activeVideo) {
+                    
+                    if (!activeVideo && videos.length > 0) {
+                        activeVideo = videos[0];
+                    }
+                    
+                    if (!activeVideo) {
                     return { found: false, isLiked: false };
-                }
-                
-                const article = activeVideo.closest('article');
+                    }
+                    
+                    const article = activeVideo.closest('article');
                 if (article) {
                     const likeButton = article.querySelector('button[aria-label^="Like video"]');
                     if (likeButton) {
-                        const span = likeButton.querySelector('span[data-e2e="like-icon"]');
-                        const color = span?.style.color || window.getComputedStyle(span).color;
-                        const isLiked = color.includes('254') || color.includes('FE2C');
-                        
-                        return {
-                            found: true,
-                            isLiked: isLiked,
+                    const span = likeButton.querySelector('span[data-e2e="like-icon"]');
+                    const color = span?.style.color || window.getComputedStyle(span).color;
+                    const isLiked = color.includes('254') || color.includes('FE2C');
+                    
+                    return {
+                        found: true,
+                        isLiked: isLiked,
                             color: color,
                             ariaLabel: likeButton.getAttribute('aria-label')
                         };
@@ -660,8 +618,8 @@ class TikTokBot:
                 }
                 
                 return { found: false, isLiked: false, color: 'unknown' };
-            }
-        """)
+                }
+            """)
     
     async def scroll_to_next_video(self):
         """Scroll to next video and wait for animation to complete"""
@@ -670,6 +628,24 @@ class TikTokBot:
         
         try:
             logger.info("Scrolling to next video...")
+            
+            # CRITICAL: Before scrolling, click on a completely safe area to remove focus from any interactive elements
+            # This prevents accidental clicks on like buttons, LIVE overlays, etc during scroll
+            logger.info("Clicking safe area to remove focus from interactive elements...")
+            await self.page.evaluate("""
+                () => {
+                    // Click bottom-left corner (guaranteed safe area)
+                    const event = new MouseEvent('click', {
+                        view: window,
+                        bubbles: true,
+                        cancelable: true,
+                        clientX: 5,
+                        clientY: window.innerHeight - 5
+                    });
+                    document.body.dispatchEvent(event);
+                }
+            """)
+            await asyncio.sleep(0.3)  # Small delay after click
             
             # Method 1: Arrow Down key
             await self.page.keyboard.press('ArrowDown')

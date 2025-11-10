@@ -161,11 +161,22 @@ class CalibrationSession:
                 # Execute action based on classification
                 if is_match:
                     logger.info(f"✅ MATCH! (confidence {confidence:.2f} >= {CONFIDENCE_THRESHOLD}) Liking video...")
+                    
+                    # Initial like attempt (fast, minimal delay)
                     await self.bot.like_video()
-                    # NOTE: like_video() uses DOUBLE-TAP method (like mobile TikTok) with up to 3 retry attempts
-                    # Total delay is ~8-10 seconds per attempt to ensure like is committed
-                    # If first attempt fails, will retry up to 2 more times before giving up
-                    logger.info("Double-tap like action completed - video should remain liked")
+                    
+                    # Give some time for TikTok to process
+                    logger.info("Giving TikTok time to process like...")
+                    await asyncio.sleep(1.5)
+                    
+                    # CRITICAL: Verify like is still there and retry if needed (right before scroll)
+                    logger.info("Verifying like persisted and retrying if needed...")
+                    like_verified = await self.bot.verify_and_retry_like()
+                    
+                    if like_verified:
+                        logger.info("✓ Like verified and locked in - ready to scroll")
+                    else:
+                        logger.warning("⚠️ Could not get like to stick after multiple attempts")
                 else:
                     logger.info(f"❌ No match (confidence {confidence:.2f} < {CONFIDENCE_THRESHOLD}), skipping...")
                 
@@ -180,13 +191,12 @@ class CalibrationSession:
                     }
                     await self.stats_callback(stats)
                 
-                # Scroll to next video (after classification is done and like is committed)
+                # Scroll to next video (after classification is done and like is verified)
                 logger.info("Scrolling to next video...")
                 await self.bot.scroll_to_next_video()
                 
                 # Wait for scroll animation to FULLY complete before processing next video
-                # This prevents interacting with wrong video during scroll transitions
-                await asyncio.sleep(3.5)  # Increased from 3s to 3.5s for extra safety
+                await asyncio.sleep(3.0)
                 
                 # Check completion
                 stats = self.bot.get_stats()
