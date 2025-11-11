@@ -146,9 +146,19 @@ class TikTokBot:
         if not self.page:
             raise RuntimeError("Browser not started")
         
+        # Verify page is still valid before navigation
+        try:
+            # Check if page is closed
+            if self.page.is_closed():
+                raise RuntimeError("Page was closed before navigation")
+        except Exception as e:
+            logger.error(f"Page check failed: {e}")
+            raise RuntimeError(f"Page is invalid: {e}")
+        
         try:
             logger.info("Navigating to TikTok FYP...")
-            await self.page.goto('https://www.tiktok.com/foryou', wait_until='networkidle', timeout=30000)
+            # Use 'domcontentloaded' instead of 'networkidle' - TikTok never reaches networkidle
+            await self.page.goto('https://www.tiktok.com/foryou', wait_until='domcontentloaded', timeout=30000)
             
             # Wait for page to load
             await asyncio.sleep(2)
@@ -475,7 +485,7 @@ class TikTokBot:
             # Check if already liked
             check = await self._check_if_liked()
             if check.get('isLiked'):
-                logger.info(f"Video already liked (color: {check.get('likeColor')})")
+                logger.info(f"Video already liked (color: {check.get('color', 'unknown')})")
                 return True
             
             # Get the video element using Playwright
@@ -579,38 +589,38 @@ class TikTokBot:
     async def _check_if_liked(self) -> dict:
         """Helper method to check if the current video is liked by examining the heart button color"""
         return await self.page.evaluate("""
-                () => {
-                    const videos = Array.from(document.querySelectorAll('video'));
-                    let activeVideo = null;
-                    
-                    for (const vid of videos) {
-                        const rect = vid.getBoundingClientRect();
-                        const isInCenter = rect.top >= -100 && rect.top <= 300;
-                        if (isInCenter) {
-                            activeVideo = vid;
-                            break;
-                        }
+            () => {
+                const videos = Array.from(document.querySelectorAll('video'));
+                let activeVideo = null;
+                
+                for (const vid of videos) {
+                    const rect = vid.getBoundingClientRect();
+                    const isInCenter = rect.top >= -100 && rect.top <= 300;
+                    if (isInCenter) {
+                        activeVideo = vid;
+                        break;
                     }
-                    
-                    if (!activeVideo && videos.length > 0) {
-                        activeVideo = videos[0];
-                    }
-                    
-                    if (!activeVideo) {
+                }
+                
+                if (!activeVideo && videos.length > 0) {
+                    activeVideo = videos[0];
+                }
+                
+                if (!activeVideo) {
                     return { found: false, isLiked: false };
-                    }
-                    
-                    const article = activeVideo.closest('article');
+                }
+                
+                const article = activeVideo.closest('article');
                 if (article) {
                     const likeButton = article.querySelector('button[aria-label^="Like video"]');
                     if (likeButton) {
-                    const span = likeButton.querySelector('span[data-e2e="like-icon"]');
-                    const color = span?.style.color || window.getComputedStyle(span).color;
-                    const isLiked = color.includes('254') || color.includes('FE2C');
-                    
-                    return {
-                        found: true,
-                        isLiked: isLiked,
+                        const span = likeButton.querySelector('span[data-e2e="like-icon"]');
+                        const color = span?.style.color || window.getComputedStyle(span).color;
+                        const isLiked = color.includes('254') || color.includes('FE2C');
+                        
+                        return {
+                            found: true,
+                            isLiked: isLiked,
                             color: color,
                             ariaLabel: likeButton.getAttribute('aria-label')
                         };
@@ -618,8 +628,8 @@ class TikTokBot:
                 }
                 
                 return { found: false, isLiked: false, color: 'unknown' };
-                }
-            """)
+            }
+        """)
     
     async def scroll_to_next_video(self):
         """Scroll to next video and wait for animation to complete"""
